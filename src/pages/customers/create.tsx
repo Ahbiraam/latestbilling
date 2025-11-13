@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
@@ -39,6 +39,13 @@ const accountManagers = [
   { id: "3", name: "Mike Johnson" },
 ];
 
+// ✅ Auto-generate random fallback code
+function generateCustomerCode() {
+  const prefix = "CUST";
+  const randomNum = Math.floor(1000 + Math.random() * 9000);
+  return `${prefix}${randomNum}`;
+}
+
 const customerSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
   code: z.string().min(2, "Code must be at least 2 characters"),
@@ -48,8 +55,8 @@ const customerSchema = z.object({
   whatsapp: z.string().min(10, "Please enter a valid WhatsApp number"),
   phone: z.string().min(10, "Please enter a valid phone number"),
   contactPerson: z.string().min(2, "Contact person name must be at least 2 characters"),
-  gstNumber: z.string().min(15, "GST number must be 15 characters").optional(),
-  panNumber: z.string().min(10, "PAN number must be 10 characters").optional(),
+  gstNumber: z.string().optional(),
+  panNumber: z.string().optional(),
   paymentTerms: z.number().min(0, "Payment terms must be positive"),
   accountManager: z.string().min(1, "Please select an account manager"),
   isActive: z.boolean(),
@@ -63,7 +70,7 @@ export default function CreateCustomerPage() {
     resolver: zodResolver(customerSchema),
     defaultValues: {
       name: "",
-      code: "",
+      code: generateCustomerCode(),
       type: "",
       address: "",
       email: "",
@@ -78,11 +85,24 @@ export default function CreateCustomerPage() {
     },
   });
 
+  // 🔁 Auto-generate customer code when name changes
+  useEffect(() => {
+    const name = form.watch("name");
+    if (name) {
+      const prefix = "CUST";
+      const shortName = name.substring(0, 3).toUpperCase(); // first 3 letters
+      const randomNum = Math.floor(100 + Math.random() * 900); // random 3 digits
+      const newCode = `${prefix}-${shortName}${randomNum}`;
+      form.setValue("code", newCode);
+    } else {
+      form.setValue("code", generateCustomerCode());
+    }
+  }, [form.watch("name")]);
+
   async function onSubmit(values: z.infer<typeof customerSchema>) {
     try {
       setIsSubmitting(true);
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, 2000)); // mock API
       console.log(values);
       toast.success("Customer created successfully!");
       navigate("/customers");
@@ -110,6 +130,7 @@ export default function CreateCustomerPage() {
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
               <div className="grid gap-6 md:grid-cols-2">
+                {/* Customer Name */}
                 <FormField
                   control={form.control}
                   name="name"
@@ -124,6 +145,7 @@ export default function CreateCustomerPage() {
                   )}
                 />
 
+                {/* Customer Code */}
                 <FormField
                   control={form.control}
                   name="code"
@@ -131,20 +153,28 @@ export default function CreateCustomerPage() {
                     <FormItem>
                       <FormLabel>Customer Code</FormLabel>
                       <FormControl>
-                        <Input placeholder="Enter customer code" {...field} />
+                        <Input
+                          placeholder="Auto-generated"
+                          {...field}
+                          readOnly
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
 
+                {/* Customer Type */}
                 <FormField
                   control={form.control}
                   name="type"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Customer Type</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <Select
+                        onValueChange={field.onChange}
+                        defaultValue={field.value}
+                      >
                         <FormControl>
                           <SelectTrigger>
                             <SelectValue placeholder="Select customer type" />
@@ -163,6 +193,7 @@ export default function CreateCustomerPage() {
                   )}
                 />
 
+                {/* Address */}
                 <FormField
                   control={form.control}
                   name="address"
@@ -181,6 +212,7 @@ export default function CreateCustomerPage() {
                   )}
                 />
 
+                {/* Email */}
                 <FormField
                   control={form.control}
                   name="email"
@@ -199,6 +231,7 @@ export default function CreateCustomerPage() {
                   )}
                 />
 
+                {/* WhatsApp */}
                 <FormField
                   control={form.control}
                   name="whatsapp"
@@ -217,6 +250,7 @@ export default function CreateCustomerPage() {
                   )}
                 />
 
+                {/* Phone */}
                 <FormField
                   control={form.control}
                   name="phone"
@@ -235,6 +269,7 @@ export default function CreateCustomerPage() {
                   )}
                 />
 
+                {/* Contact Person */}
                 <FormField
                   control={form.control}
                   name="contactPerson"
@@ -252,6 +287,7 @@ export default function CreateCustomerPage() {
                   )}
                 />
 
+                {/* GST Number */}
                 <FormField
                   control={form.control}
                   name="gstNumber"
@@ -266,6 +302,7 @@ export default function CreateCustomerPage() {
                   )}
                 />
 
+                {/* PAN Number */}
                 <FormField
                   control={form.control}
                   name="panNumber"
@@ -280,6 +317,7 @@ export default function CreateCustomerPage() {
                   )}
                 />
 
+                {/* Payment Terms */}
                 <FormField
                   control={form.control}
                   name="paymentTerms"
@@ -291,7 +329,9 @@ export default function CreateCustomerPage() {
                           type="number"
                           placeholder="Enter payment terms"
                           {...field}
-                          onChange={(e) => field.onChange(Number(e.target.value))}
+                          onChange={(e) =>
+                            field.onChange(Number(e.target.value))
+                          }
                         />
                       </FormControl>
                       <FormMessage />
@@ -299,13 +339,17 @@ export default function CreateCustomerPage() {
                   )}
                 />
 
+                {/* Account Manager */}
                 <FormField
                   control={form.control}
                   name="accountManager"
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Account Manager</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <Select
+                        onValueChange={field.onChange}
+                        defaultValue={field.value}
+                      >
                         <FormControl>
                           <SelectTrigger>
                             <SelectValue placeholder="Select account manager" />
@@ -324,6 +368,7 @@ export default function CreateCustomerPage() {
                   )}
                 />
 
+                {/* Active Switch */}
                 <FormField
                   control={form.control}
                   name="isActive"
@@ -346,6 +391,7 @@ export default function CreateCustomerPage() {
                 />
               </div>
 
+              {/* Buttons */}
               <div className="flex justify-end gap-4">
                 <Button
                   type="button"

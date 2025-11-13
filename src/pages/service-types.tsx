@@ -53,6 +53,7 @@ type ServiceType = {
   companyId: string;
   code: string;
   name: string;
+  sacCode: string; 
   description: string;
   taxRate: number;
   isActive: boolean;
@@ -102,6 +103,7 @@ const initialServiceTypes: ServiceType[] = [
     code: "CONS",
     name: "Consulting",
     description: "Professional consulting services",
+    sacCode: "998311", // ✅ added
     taxRate: 18,
     isActive: true,
   },
@@ -111,10 +113,12 @@ const initialServiceTypes: ServiceType[] = [
     code: "MAINT",
     name: "Maintenance",
     description: "Regular maintenance services",
+    sacCode: "998717", // ✅ added
     taxRate: 12,
     isActive: true,
   },
 ];
+
 
 const initialCustomerTypes: CustomerType[] = [
   {
@@ -163,9 +167,11 @@ const serviceTypeSchema = z.object({
   code: z.string().min(2, "Code must be at least 2 characters"),
   name: z.string().min(2, "Name must be at least 2 characters"),
   description: z.string().min(5, "Description must be at least 5 characters"),
+  sacCode: z.string().min(4, "SAC Code must be at least 4 digits"), // ✅ added
   taxRate: z.number().min(0).max(100, "Tax rate must be between 0 and 100"),
   isActive: z.boolean(),
 });
+
 
 const customerTypeSchema = z.object({
   code: z.string().min(2, "Code must be at least 2 characters"),
@@ -510,6 +516,7 @@ export default function ServiceTypesPage() {
                 <TableRow>
                   <TableHead>Code</TableHead>
                   <TableHead>Name</TableHead>
+                  <TableHead>SAC Code</TableHead>
                   <TableHead>Description</TableHead>
                   <TableHead>Tax Rate</TableHead>
                   <TableHead>Status</TableHead>
@@ -521,6 +528,7 @@ export default function ServiceTypesPage() {
                   <TableRow key={type.id}>
                     <TableCell className="font-medium">{type.code}</TableCell>
                     <TableCell>{type.name}</TableCell>
+                    <TableCell>{type.sacCode}</TableCell> 
                     <TableCell>{type.description}</TableCell>
                     <TableCell>{type.taxRate}%</TableCell>
                     <TableCell>
@@ -666,58 +674,136 @@ export default function ServiceTypesPage() {
             </DialogDescription>
           </DialogHeader>
 
-          {dialogMode === "service" && (
-            <Form {...serviceTypeForm}>
-              <form onSubmit={serviceTypeForm.handleSubmit(onSubmitServiceType)} className="space-y-4">
-                <FormField control={serviceTypeForm.control} name="code" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Code</FormLabel>
-                    <FormControl><Input placeholder="Enter code" {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={serviceTypeForm.control} name="name" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Name</FormLabel>
-                    <FormControl><Input placeholder="Enter name" {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={serviceTypeForm.control} name="description" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Description</FormLabel>
-                    <FormControl><Input placeholder="Enter description" {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={serviceTypeForm.control} name="taxRate" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Tax Rate (%)</FormLabel>
-                    <FormControl><Input type="number" placeholder="Enter tax rate" {...field} onChange={(e) => field.onChange(Number(e.target.value))} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={serviceTypeForm.control} name="isActive" render={({ field }) => (
-                  <FormItem className="flex items-center justify-between rounded-lg border p-4">
-                    <div className="space-y-0.5">
-                      <FormLabel>Active Status</FormLabel>
-                      <p className="text-sm text-muted-foreground">Enable if this service type is active</p>
-                    </div>
-                    <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
-                  </FormItem>
-                )} />
+     {dialogMode === "service" && (
+  <Form {...serviceTypeForm}>
+    <form
+      onSubmit={serviceTypeForm.handleSubmit(onSubmitServiceType)}
+      className="space-y-4"
+    >
+      {/* --- Code --- */}
+      <FormField
+        control={serviceTypeForm.control}
+        name="code"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Code</FormLabel>
+            <FormControl>
+              <Input placeholder="Enter code" {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
 
-                <DialogFooter>
-                  <Button variant="outline" type="button" onClick={() => { setIsDialogOpen(false); setEditingId(null); }}>
-                    Cancel
-                  </Button>
-                  <Button type="submit" disabled={isSubmitting}>
-                    {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} {editingId ? "Update" : "Create"}
-                  </Button>
-                </DialogFooter>
-              </form>
-            </Form>
+      {/* --- Name --- */}
+      <FormField
+        control={serviceTypeForm.control}
+        name="name"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Name</FormLabel>
+            <FormControl>
+              <Input placeholder="Enter name" {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      {/* ✅ NEW: SAC Code Field */}
+      <FormField
+        control={serviceTypeForm.control}
+        name="sacCode"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>SAC Code</FormLabel>
+            <FormControl>
+              <Input placeholder="Enter SAC code (e.g. 998311)" {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      {/* --- Description --- */}
+      <FormField
+        control={serviceTypeForm.control}
+        name="description"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Description</FormLabel>
+            <FormControl>
+              <Input placeholder="Enter description" {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      {/* --- Tax Rate --- */}
+      <FormField
+        control={serviceTypeForm.control}
+        name="taxRate"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Tax Rate (%)</FormLabel>
+            <FormControl>
+              <Input
+                type="number"
+                placeholder="Enter tax rate"
+                {...field}
+                onChange={(e) => field.onChange(Number(e.target.value))}
+              />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      {/* --- Active Status --- */}
+      <FormField
+        control={serviceTypeForm.control}
+        name="isActive"
+        render={({ field }) => (
+          <FormItem className="flex items-center justify-between rounded-lg border p-4">
+            <div className="space-y-0.5">
+              <FormLabel>Active Status</FormLabel>
+              <p className="text-sm text-muted-foreground">
+                Enable if this service type is active
+              </p>
+            </div>
+            <FormControl>
+              <Switch
+                checked={field.value}
+                onCheckedChange={field.onChange}
+              />
+            </FormControl>
+          </FormItem>
+        )}
+      />
+
+      {/* --- Footer --- */}
+      <DialogFooter>
+        <Button
+          variant="outline"
+          type="button"
+          onClick={() => {
+            setIsDialogOpen(false);
+            setEditingId(null);
+          }}
+        >
+          Cancel
+        </Button>
+        <Button type="submit" disabled={isSubmitting}>
+          {isSubmitting && (
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
           )}
+          {editingId ? "Update" : "Create"}
+        </Button>
+      </DialogFooter>
+    </form>
+  </Form>
+)}
 
           {dialogMode === "customer" && (
             <Form {...customerTypeForm}>

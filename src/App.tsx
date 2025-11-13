@@ -12,6 +12,7 @@ import BillingPage from "@/pages/billing";
 import CreateInvoicePage from "@/pages/billing/create";
 import ReceiptsPage from "@/pages/receipts";
 import CreditNotesPage from "@/pages/credit-notes";
+import LoginPage from "@/pages/login";
 
 function App() {
   return (
@@ -32,6 +33,10 @@ function App() {
             <Route path="/receipts" element={<ReceiptsPage />} />
             <Route path="/credit-notes" element={<CreditNotesPage />} />
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/login" element={< LoginPage/>} />
+
+
+
           </Routes>
         </div>
         <Toaster />
