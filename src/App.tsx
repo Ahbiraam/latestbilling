@@ -27,31 +27,31 @@ function AppLayout() {
       <div className={!isLoginPage ? "lg:pl-72" : ""}>
         {!isLoginPage && <Header />}
 
-        <Routes>
-          {/* PUBLIC */}
-          <Route path="/login" element={<LoginPage />} />
+      <Routes>
+  {/* PUBLIC */}
+  <Route path="/login" element={<LoginPage />} />
 
-          {/* PROTECTED */}
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/company" element={<CompanyPage />} />
-          <Route path="/gst" element={<GstPage />} />
-          <Route path="/service-types" element={<ServiceTypesPage />} />
+  {/* PROTECTED */}
+  <Route path="/dashboard" element={<DashboardPage />} />
+  <Route path="/company" element={<CompanyPage />} />
+  <Route path="/gst" element={<GstPage />} />
+  <Route path="/service-types" element={<ServiceTypesPage />} />
 
-          {/* CUSTOMERS */}
-          <Route path="/customers" element={<CustomersPage />} />
-          <Route path="/customers/create" element={<CreateCustomerPage />} />   {/* ✔ Correct */}
+  {/* CUSTOMERS */}
+  <Route path="/customers" element={<CustomersPage />} />
+  <Route path="/customers/create" element={<CreateCustomerPage />} />
 
-          {/* BILLING */}
-          <Route path="/billing" element={<BillingPage />} />
-          <Route path="/billing/create" element={<CreateInvoicePage />} />
+  {/* BILLING */}
+  <Route path="/billing" element={<BillingPage />} />
+  <Route path="/billing/create" element={<CreateInvoicePage />} />
 
-          {/* OTHERS */}
-          <Route path="/receipts" element={<ReceiptsPage />} />
-          <Route path="/credit-notes" element={<CreditNotesPage />} />
+  {/* OTHERS */}
+  <Route path="/receipts" element={<ReceiptsPage />} />
+  <Route path="/credit-notes" element={<CreditNotesPage />} />
 
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-        </Routes>
-
+  {/* DEFAULT → LOGIN */}
+  <Route path="/" element={<Navigate to="/login" replace />} />
+</Routes>
         <Toaster />
       </div>
     </div>
