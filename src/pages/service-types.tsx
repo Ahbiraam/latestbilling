@@ -1,4 +1,6 @@
-import { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { apiFetch } from "@/lib/api";
+
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -18,18 +20,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -45,178 +36,112 @@ import { Search, Plus, Pencil, Trash2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 /**
- * Types (simplified)
+ * Screenshot (Swagger) reference:
+ * /mnt/data/Screenshot 2025-11-20 165024.png
  */
-type Company = { id: string; name: string };
+
+/** -------------------------
+ * Types
+ * ------------------------- */
 type ServiceType = {
   id: string;
-  companyId: string;
+  companyId?: string;
   code: string;
   name: string;
-  sacCode: string; 
-  description: string;
-  taxRate: number;
-  isActive: boolean;
+  description?: string;
+  sacCode?: string;
+  taxRate?: number;
+  isActive?: boolean;
 };
+
 type CustomerType = {
   id: string;
-  companyId: string;
+  companyId?: string;
   code: string;
   name: string;
-  description: string;
-  paymentTerms: number;
-  isActive: boolean;
+  description?: string;
+  paymentTerms?: number;
+  isActive?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
 };
+
 type AccountsManager = {
   id: string;
   companyId: string;
   name: string;
   email: string;
   phone?: string;
-  isActive: boolean;
+  isActive?: boolean;
 };
 
-/**
- * Mock companies & current user (simulate multi-company + admin rights)
- * In real app, replace `currentUser` with auth context and fetch companies from API
- */
-const companies: Company[] = [
+/** -------------------------
+ * Mock / constants (replace as needed)
+ * ------------------------- */
+const companies = [
   { id: "c1", name: "Alpha Corp" },
   { id: "c2", name: "Beta Pvt Ltd" },
 ];
-
-// currentUser simulates logged-in user; change `companyId` to test different company view
 const currentUser = {
   id: "u1",
   name: "Admin User",
-  companyId: "c1", // user belongs to company c1
-  isAdmin: true, // controls whether user can create/edit/inactivate
+  companyId: "c1",
+  isAdmin: true,
 };
 
-/**
- * Initial mock data (company-specific)
- */
-const initialServiceTypes: ServiceType[] = [
-  {
-    id: "s1",
-    companyId: "c1",
-    code: "CONS",
-    name: "Consulting",
-    description: "Professional consulting services",
-    sacCode: "998311", // ✅ added
-    taxRate: 18,
-    isActive: true,
-  },
-  {
-    id: "s2",
-    companyId: "c2",
-    code: "MAINT",
-    name: "Maintenance",
-    description: "Regular maintenance services",
-    sacCode: "998717", // ✅ added
-    taxRate: 12,
-    isActive: true,
-  },
-];
-
-
-const initialCustomerTypes: CustomerType[] = [
-  {
-    id: "ct1",
-    companyId: "c1",
-    code: "CORP",
-    name: "Corporate",
-    description: "Large corporate clients",
-    paymentTerms: 30,
-    isActive: true,
-  },
-  {
-    id: "ct2",
-    companyId: "c2",
-    code: "SME",
-    name: "Small Business",
-    description: "Small and medium enterprises",
-    paymentTerms: 15,
-    isActive: true,
-  },
-];
-
-const initialAccountsManagers: AccountsManager[] = [
-  {
-    id: "am1",
-    companyId: "c1",
-    name: "Ravi Kumar",
-    email: "ravi@alpha.com",
-    phone: "9876543210",
-    isActive: true,
-  },
-  {
-    id: "am2",
-    companyId: "c2",
-    name: "Susan Lee",
-    email: "susan@beta.com",
-    phone: "9123456780",
-    isActive: true,
-  },
-];
-
-/**
+/** -------------------------
  * Validation schemas
- */
+ * ------------------------- */
 const serviceTypeSchema = z.object({
   code: z.string().min(2, "Code must be at least 2 characters"),
   name: z.string().min(2, "Name must be at least 2 characters"),
-  description: z.string().min(5, "Description must be at least 5 characters"),
-  sacCode: z.string().min(4, "SAC Code must be at least 4 digits"), // ✅ added
-  taxRate: z.number().min(0).max(100, "Tax rate must be between 0 and 100"),
-  isActive: z.boolean(),
+  description: z.string().optional(),
+  taxRate: z.coerce.number().min(0).max(100).optional(),
+  isActive: z.boolean().optional(),
 });
 
-
 const customerTypeSchema = z.object({
-  code: z.string().min(2, "Code must be at least 2 characters"),
-  name: z.string().min(2, "Name must be at least 2 characters"),
-  description: z.string().min(5, "Description must be at least 5 characters"),
-  paymentTerms: z.number().min(0, "Payment terms must be positive"),
-  isActive: z.boolean(),
+  code: z.string().min(2),
+  name: z.string().min(2),
+  description: z.string().optional(),
+  paymentTerms: z.coerce.number().min(0).optional(),
+  isActive: z.boolean().optional(),
 });
 
 const accountsManagerSchema = z.object({
   name: z.string().min(2),
   email: z.string().email(),
   phone: z.string().optional(),
-  isActive: z.boolean(),
+  isActive: z.boolean().optional(),
 });
 
-/**
+/** -------------------------
  * Component
- */
-export default function ServiceTypesPage() {
+ * ------------------------- */
+export default function ServiceTypesPage(): JSX.Element {
   const [activeTab, setActiveTab] = useState<"service" | "customer" | "accounts">(
     "service"
   );
-  const [serviceTypes, setServiceTypes] = useState<ServiceType[]>(
-    initialServiceTypes
-  );
-  const [customerTypes, setCustomerTypes] = useState<CustomerType[]>(
-    initialCustomerTypes
-  );
-  const [accountsManagers, setAccountsManagers] = useState<AccountsManager[]>(
-    initialAccountsManagers
-  );
+
+  const [serviceTypes, setServiceTypes] = useState<ServiceType[]>([]);
+  const [customerTypes, setCustomerTypes] = useState<CustomerType[]>([]);
+  const [accountsManagers, setAccountsManagers] = useState<AccountsManager[]>([]);
 
   // UI state
   const [searchQuery, setSearchQuery] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoadingServices, setIsLoadingServices] = useState(false);
+  const [isLoadingCustomers, setIsLoadingCustomers] = useState(false);
+  const [isLoadingAccounts, setIsLoadingAccounts] = useState(false);
 
   // Dialog state
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null); // id being edited
-  const [dialogMode, setDialogMode] = useState<
-    "service" | "customer" | "accounts"
-  >("service");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [dialogMode, setDialogMode] = useState<"service" | "customer" | "accounts">(
+    "service"
+  );
 
-  // Forms
+  // forms
   const serviceTypeForm = useForm<z.infer<typeof serviceTypeSchema>>({
     resolver: zodResolver(serviceTypeSchema),
     defaultValues: {
@@ -249,233 +174,532 @@ export default function ServiceTypesPage() {
     },
   });
 
-  /**
-   * Helper: filter lists by current user's company
-   */
+  /** -------------------------
+   * Helpers
+   * ------------------------- */
+  async function tryParseJson(res: Response) {
+    try {
+      return await res.clone().json();
+    } catch {
+      return null;
+    }
+  }
+
   const companyId = currentUser.companyId;
-  const visibleServiceTypes = serviceTypes.filter((s) => s.companyId === companyId);
-  const visibleCustomerTypes = customerTypes.filter((c) => c.companyId === companyId);
-  const visibleAccounts = accountsManagers.filter((a) => a.companyId === companyId);
+
+  /** -------------------------
+   * Load service types (GET)
+   * ------------------------- */
+  useEffect(() => {
+    async function loadServiceTypes() {
+      setIsLoadingServices(true);
+      try {
+        const res = await apiFetch("/api/v1/api/v1/service-types");
+        if (!res.ok) {
+          if (res.status === 401) {
+            toast.error("Unauthorized. Please login or check token.");
+            return;
+          }
+          throw new Error(`Failed to fetch service types (${res.status})`);
+        }
+        const body = await res.json();
+        const list: any[] = Array.isArray(body)
+          ? body
+          : Array.isArray(body?.data)
+          ? body.data
+          : Array.isArray(body?.items)
+          ? body.items
+          : [];
+        const normalized = list.map((it: any) => ({
+          id: it.id ?? it._id ?? String(it.code ?? Date.now()),
+          code: it.code,
+          name: it.name,
+          description: it.description,
+          sacCode: it.sacCode,
+          taxRate: it.taxRate ?? 0,
+          isActive: typeof it.isActive === "boolean" ? it.isActive : true,
+          companyId: it.companyId,
+        })) as ServiceType[];
+        setServiceTypes(normalized);
+      } catch (err) {
+        console.error(err);
+        toast.error("Could not load service types");
+      } finally {
+        setIsLoadingServices(false);
+      }
+    }
+    loadServiceTypes();
+  }, []);
+
+  /** -------------------------
+   * Load customer types (GET)
+   * ------------------------- */
+  useEffect(() => {
+    async function loadCustomerTypes() {
+      setIsLoadingCustomers(true);
+      try {
+        const res = await apiFetch("/api/v1/api/v1/client-types");
+        if (!res.ok) {
+          if (res.status === 401) {
+            toast.error("Unauthorized. Please login or check token.");
+            return;
+          }
+          throw new Error(`Failed to fetch customer types (${res.status})`);
+        }
+        const body = await res.json();
+        const list: any[] = Array.isArray(body)
+          ? body
+          : Array.isArray(body?.data)
+          ? body.data
+          : Array.isArray(body?.items)
+          ? body.items
+          : [];
+        const normalized = list.map((it: any) => ({
+          id: it.id ?? it._id ?? String(it.code ?? Date.now()),
+          code: it.code,
+          name: it.name,
+          description: it.description,
+          paymentTerms: it.paymentTerms ?? 0,
+          isActive: typeof it.isActive === "boolean" ? it.isActive : true,
+          companyId: it.companyId,
+          createdAt: it.createdAt,
+          updatedAt: it.updatedAt,
+        })) as CustomerType[];
+        setCustomerTypes(normalized);
+      } catch (err) {
+        console.error(err);
+        toast.error("Could not load customer types");
+      } finally {
+        setIsLoadingCustomers(false);
+      }
+    }
+    loadCustomerTypes();
+  }, []);
+
+  /** -------------------------
+   * Load accounts managers (GET)
+   * Endpoint (swagger shows):
+   * /api/v1/account-managers/api/v1/account-managers
+   * ------------------------- */
+useEffect(() => {
+  async function loadAccountManagers() {
+    try {
+      const res = await apiFetch("/api/v1/account-managers/api/v1/account-managers");
+
+      const body = await res.clone().json().catch(() => null);
+      console.log("🔥 ACCOUNT MANAGER RAW RESPONSE:", body);
+
+      // FIX: backend returns { root: [...] }
+      const list: any[] = Array.isArray(body?.root)
+        ? body.root
+        : [];
+
+      const normalized = list.map((it: any) => ({
+        id: it.id ?? it._id,
+        name: it.name,
+        email: it.email,
+        phone: it.phone,
+        isActive: it.isActive ?? true,
+        companyId: it.companyId ?? currentUser.companyId,
+      }));
+
+      setAccountsManagers(normalized);
+    } catch (err) {
+      console.error("Accounts GET error:", err);
+      toast.error("Failed to load account managers");
+    }
+  }
+
+  loadAccountManagers();
+}, []);
+
+  // visible lists (filter by company if item belongs to company)
+  const visibleServiceTypes = serviceTypes.filter(
+    (s) => !s.companyId || s.companyId === companyId
+  );
+  const visibleCustomerTypes = customerTypes.filter((c) => !c.companyId || c.companyId === companyId);
+  const visibleAccounts = accountsManagers.filter((a) => !a.companyId || a.companyId === companyId);
 
   const filteredServiceTypes = visibleServiceTypes.filter(
-    (type) =>
-      type.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      type.code.toLowerCase().includes(searchQuery.toLowerCase())
+    (t) =>
+      t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      t.code.toLowerCase().includes(searchQuery.toLowerCase())
   );
-
   const filteredCustomerTypes = visibleCustomerTypes.filter(
-    (type) =>
-      type.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      type.code.toLowerCase().includes(searchQuery.toLowerCase())
+    (t) =>
+      t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      t.code.toLowerCase().includes(searchQuery.toLowerCase())
   );
-
   const filteredAccounts = visibleAccounts.filter((m) =>
     `${m.name} ${m.email} ${m.phone ?? ""}`.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  /**
-   * Create / Edit handlers (all actions require isAdmin AND matching company)
-   */
-
-  // Open dialog for create
+  // open create dialog
   function openCreateDialog(mode: "service" | "customer" | "accounts") {
     if (!currentUser.isAdmin) {
-      toast.error("Only company admins can perform this action.");
+      toast.error("Only admins can perform this action.");
       return;
     }
     setDialogMode(mode);
     setEditingId(null);
-    // reset corresponding form
     if (mode === "service") serviceTypeForm.reset();
     if (mode === "customer") customerTypeForm.reset();
     if (mode === "accounts") accountsForm.reset();
     setIsDialogOpen(true);
   }
 
-  // Open dialog for edit
+  // open edit dialog (kept for service/customer — accounts editing is not supported in backend)
   function openEditDialog(mode: "service" | "customer" | "accounts", id: string) {
     if (!currentUser.isAdmin) {
-      toast.error("Only company admins can perform this action.");
+      toast.error("Only admins can perform this action.");
       return;
     }
     setDialogMode(mode);
     setEditingId(id);
 
     if (mode === "service") {
-      const record = serviceTypes.find((s) => s.id === id && s.companyId === companyId);
-      if (!record) return toast.error("Record not found or access denied");
+      const rec = serviceTypes.find((s) => s.id === id);
+      if (!rec) return toast.error("Service not found");
       serviceTypeForm.reset({
-        code: record.code,
-        name: record.name,
-        description: record.description,
-        taxRate: record.taxRate,
-        isActive: record.isActive,
+        code: rec.code,
+        name: rec.name,
+        description: rec.description,
+        taxRate: rec.taxRate ?? 0,
+        isActive: rec.isActive ?? true,
       });
-    }
-
-    if (mode === "customer") {
-      const record = customerTypes.find((c) => c.id === id && c.companyId === companyId);
-      if (!record) return toast.error("Record not found or access denied");
+    } else if (mode === "customer") {
+      const rec = customerTypes.find((c) => c.id === id);
+      if (!rec) return toast.error("Customer type not found");
       customerTypeForm.reset({
-        code: record.code,
-        name: record.name,
-        description: record.description,
-        paymentTerms: record.paymentTerms,
-        isActive: record.isActive,
+        code: rec.code,
+        name: rec.name,
+        description: rec.description,
+        paymentTerms: rec.paymentTerms ?? 0,
+        isActive: rec.isActive ?? true,
       });
-    }
-
-    if (mode === "accounts") {
-      const record = accountsManagers.find((a) => a.id === id && a.companyId === companyId);
-      if (!record) return toast.error("Record not found or access denied");
+    } else {
+      // accounts editing is not supported by backend per your request (only create + get)
+      // but keep local prefill so user can see values — saving won't call PUT
+      const rec = accountsManagers.find((a) => a.id === id);
+      if (!rec) return toast.error("Accounts manager not found");
       accountsForm.reset({
-        name: record.name,
-        email: record.email,
-        phone: record.phone,
-        isActive: record.isActive,
+        name: rec.name,
+        email: rec.email,
+        phone: rec.phone,
+        isActive: rec.isActive ?? true,
       });
     }
 
     setIsDialogOpen(true);
   }
 
-  // Submit service type (create or update)
-  async function onSubmitServiceType(values: z.infer<typeof serviceTypeSchema>) {
+  /** -------------------------
+   * Create or Update service type (POST / PUT)
+   * ------------------------- */
+  async function submitServiceType(values: z.infer<typeof serviceTypeSchema>) {
     if (!currentUser.isAdmin) return toast.error("Not authorized");
     setIsSubmitting(true);
+
     try {
-      await new Promise((r) => setTimeout(r, 700));
+      const payload = {
+        code: values.code,
+        name: values.name,
+        description: values.description ?? "",
+        taxRate: values.taxRate ?? 0,
+        isActive: typeof values.isActive === "boolean" ? values.isActive : true,
+      };
 
       if (editingId) {
-        // update
-        setServiceTypes((prev) =>
-          prev.map((s) =>
-            s.id === editingId && s.companyId === companyId ? { ...s, ...values } : s
-          )
-        );
-        toast.success("Service type updated");
+        const res = await apiFetch(`/api/v1/api/v1/service-types/${editingId}`, {
+          method: "PUT",
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const body = await tryParseJson(res);
+          throw new Error(body?.message || `Update failed (${res.status})`);
+        }
+        const updated = await res.json();
+        console.log("🔥 CUSTOMER UPDATE RESPONSE:", updated);
+        console.log("🔥 SERVICE UPDATE RESPONSE:", updated);
+        const normalized = {
+          id: updated.id ?? updated._id ?? editingId,
+          ...payload,
+          companyId: updated.companyId ?? currentUser.companyId,
+        } as ServiceType;
+
+        setServiceTypes((prev) => prev.map((p) => (p.id === editingId ? normalized : p)));
+        toast.success("Service updated");
       } else {
-        // create
-        const newRecord: ServiceType = {
-          id: `s${serviceTypes.length + 1}-${Date.now()}`,
-          companyId,
-          ...values,
-        };
-        setServiceTypes((prev) => [...prev, newRecord]);
-        toast.success("Service type created");
+        const res = await apiFetch(`/api/v1/api/v1/service-types`, {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const body = await tryParseJson(res);
+          throw new Error(body?.message || `Create failed (${res.status})`);
+        }
+        const created = await res.json();
+        console.log("🔥 CUSTOMER CREATE RESPONSE:", created);
+        console.log("🔥 SERVICE CREATE RESPONSE:", created);
+        const normalized = {
+          id: created.id ?? created._id ?? `s-${Date.now()}`,
+          ...payload,
+          companyId: created.companyId ?? currentUser.companyId,
+        } as ServiceType;
+        setServiceTypes((prev) => [...prev, normalized]);
+        toast.success("Service created");
       }
+
       setIsDialogOpen(false);
-      serviceTypeForm.reset();
       setEditingId(null);
-    } catch (e) {
-      toast.error("Operation failed");
+      serviceTypeForm.reset();
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err?.message ?? "Operation failed");
     } finally {
       setIsSubmitting(false);
     }
   }
 
-  // Submit customer type
-  async function onSubmitCustomerType(values: z.infer<typeof customerTypeSchema>) {
+  /** -------------------------
+   * Create or Update customer type (POST / PUT)
+   * ------------------------- */
+  async function submitCustomerType(values: z.infer<typeof customerTypeSchema>) {
     if (!currentUser.isAdmin) return toast.error("Not authorized");
     setIsSubmitting(true);
+
     try {
-      await new Promise((r) => setTimeout(r, 700));
+      const payload = {
+        code: values.code,
+        name: values.name,
+        description: values.description ?? "",
+        paymentTerms: values.paymentTerms ?? 0,
+        isActive: typeof values.isActive === "boolean" ? values.isActive : true,
+      };
+
       if (editingId) {
-        setCustomerTypes((prev) =>
-          prev.map((c) =>
-            c.id === editingId && c.companyId === companyId ? { ...c, ...values } : c
-          )
-        );
+        // Update (PUT)
+        const res = await apiFetch(`/api/v1/api/v1/client-types/${editingId}`, {
+          method: "PUT",
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const body = await tryParseJson(res);
+          throw new Error(body?.message || `Update failed (${res.status})`);
+        }
+        const updated = await res.json();
+        const normalized: CustomerType = {
+          id: updated.id ?? updated._id ?? editingId,
+          ...payload,
+          companyId: updated.companyId ?? currentUser.companyId,
+          createdAt: updated.createdAt,
+          updatedAt: updated.updatedAt,
+        };
+        setCustomerTypes((prev) => prev.map((c) => (c.id === editingId ? normalized : c)));
         toast.success("Customer type updated");
       } else {
-        const newRecord: CustomerType = {
-          id: `ct${customerTypes.length + 1}-${Date.now()}`,
-          companyId,
-          ...values,
+        // Create (POST)
+        const res = await apiFetch(`/api/v1/api/v1/client-types`, {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const body = await tryParseJson(res);
+          throw new Error(body?.message || `Create failed (${res.status})`);
+        }
+        const created = await res.json();
+        console.log("🔥 SERVICE CREATE RESPONSE:", created);
+        const normalized: CustomerType = {
+          id: created.id ?? created._id ?? `ct-${Date.now()}`,
+          ...payload,
+          companyId: created.companyId ?? currentUser.companyId,
+          createdAt: created.createdAt,
+          updatedAt: created.updatedAt,
         };
-        setCustomerTypes((prev) => [...prev, newRecord]);
+        setCustomerTypes((prev) => [...prev, normalized]);
         toast.success("Customer type created");
       }
+
       setIsDialogOpen(false);
-      customerTypeForm.reset();
       setEditingId(null);
-    } catch {
-      toast.error("Operation failed");
+      customerTypeForm.reset();
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err?.message ?? "Operation failed");
     } finally {
       setIsSubmitting(false);
     }
   }
 
-  // Submit accounts manager
-  async function onSubmitAccounts(values: z.infer<typeof accountsManagerSchema>) {
+  /** -------------------------
+   * Delete service type (DELETE)
+   * ------------------------- */
+  async function deleteServiceType(id: string) {
+    if (!currentUser.isAdmin) return toast.error("Not authorized");
+    if (!confirm("Delete this service type?")) return;
+    try {
+      const res = await apiFetch(`/api/v1/api/v1/service-types/${id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const body = await tryParseJson(res);
+        throw new Error(body?.message || `Delete failed (${res.status})`);
+      }
+      setServiceTypes((prev) => prev.filter((s) => s.id !== id));
+      toast.success("Service deleted");
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err?.message ?? "Delete failed");
+    }
+  }
+
+  /** -------------------------
+   * Delete customer type (DELETE)
+   * ------------------------- */
+  async function deleteCustomerType(id: string) {
+    if (!currentUser.isAdmin) return toast.error("Not authorized");
+    if (!confirm("Delete this customer type?")) return;
+    try {
+      const res = await apiFetch(`/api/v1/api/v1/client-types/${id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const body = await tryParseJson(res);
+        throw new Error(body?.message || `Delete failed (${res.status})`);
+      }
+      setCustomerTypes((prev) => prev.filter((c) => c.id !== id));
+      toast.success("Customer type deleted");
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err?.message ?? "Delete failed");
+    }
+  }
+
+  /** -------------------------
+   * Toggle active status for service (PATCH fallback to PUT)
+   * ------------------------- */
+  async function toggleActiveService(id: string) {
+    if (!currentUser.isAdmin) return toast.error("Not authorized");
+    setServiceTypes((prev) => prev.map((s) => (s.id === id ? { ...s, isActive: !s.isActive } : s)));
+    try {
+      const res = await apiFetch(`/api/v1/api/v1/service-types/${id}/toggle`, {
+        method: "PATCH",
+      });
+      if (res.ok) {
+        toast.success("Service status updated");
+        return;
+      }
+      // fallback to PUT
+      const current = serviceTypes.find((s) => s.id === id);
+      const newVal = !(current?.isActive ?? true);
+      const res2 = await apiFetch(`/api/v1/api/v1/service-types/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ ...(current ?? {}), isActive: newVal }),
+      });
+      if (!res2.ok) {
+        const body2 = await tryParseJson(res2);
+        throw new Error(body2?.message || `Toggle failed (${res2.status})`);
+      }
+      toast.success("Service status updated");
+    } catch (err: any) {
+      console.error(err);
+      toast.error("Failed to update status");
+      setServiceTypes((prev) => prev.map((s) => (s.id === id ? { ...s, isActive: !(s.isActive ?? true) } : s)));
+    }
+  }
+
+  /** -------------------------
+   * Toggle active status for customer (PATCH fallback)
+   * (optional - some backends may not have toggle endpoint)
+   * ------------------------- */
+  async function toggleActiveCustomer(id: string) {
+    if (!currentUser.isAdmin) return toast.error("Not authorized");
+    setCustomerTypes((prev) => prev.map((c) => (c.id === id ? { ...c, isActive: !c.isActive } : c)));
+    try {
+      const res = await apiFetch(`/api/v1/api/v1/client-types/${id}/toggle`, {
+        method: "PATCH",
+      });
+      if (res.ok) {
+        toast.success("Customer status updated");
+        return;
+      }
+      // fallback to PUT
+      const current = customerTypes.find((c) => c.id === id);
+      const newVal = !(current?.isActive ?? true);
+      const res2 = await apiFetch(`/api/v1/api/v1/client-types/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ ...(current ?? {}), isActive: newVal }),
+      });
+      if (!res2.ok) {
+        const body2 = await tryParseJson(res2);
+        throw new Error(body2?.message || `Toggle failed (${res2.status})`);
+      }
+      toast.success("Customer status updated");
+    } catch (err: any) {
+      console.error(err);
+      toast.error("Failed to update status");
+      setCustomerTypes((prev) => prev.map((c) => (c.id === id ? { ...c, isActive: !(c.isActive ?? true) } : c)));
+    }
+  }
+
+  /** -------------------------
+   * Create account manager (POST only)
+   * Endpoint (as provided by you):
+   * /api/v1/account-managers/api/v1/account-managers
+   * ------------------------- */
+  async function submitAccountManagerCreate(values: z.infer<typeof accountsManagerSchema>) {
     if (!currentUser.isAdmin) return toast.error("Not authorized");
     setIsSubmitting(true);
+
     try {
-      await new Promise((r) => setTimeout(r, 700));
-      if (editingId) {
-        setAccountsManagers((prev) =>
-          prev.map((a) =>
-            a.id === editingId && a.companyId === companyId ? { ...a, ...values } : a
-          )
-        );
-        toast.success("Accounts manager updated");
-      } else {
-        const newRecord: AccountsManager = {
-          id: `am${accountsManagers.length + 1}-${Date.now()}`,
-          companyId,
-          ...values,
-        };
-        setAccountsManagers((prev) => [...prev, newRecord]);
-        toast.success("Accounts manager created");
+      const payload = {
+        name: values.name,
+        email: values.email,
+        phone: values.phone ?? "",
+        isActive: typeof values.isActive === "boolean" ? values.isActive : true,
+        companyId, // attach companyId if backend expects it
+      };
+
+      const res = await apiFetch("/api/v1/account-managers/api/v1/account-managers", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const body = await tryParseJson(res);
+        throw new Error(body?.message || `Create failed (${res.status})`);
       }
+
+      const created = await res.json();
+        console.log("🔥 SERVICE CREATE RESPONSE:", created);
+      const normalized: AccountsManager = {
+        id: created.id ?? created._id ?? `am-${Date.now()}`,
+        name: created.name ?? payload.name,
+        email: created.email ?? payload.email,
+        phone: created.phone ?? payload.phone,
+        isActive: typeof created.isActive === "boolean" ? created.isActive : payload.isActive,
+        companyId: created.companyId ?? companyId,
+      };
+
+      setAccountsManagers((prev) => [...prev, normalized]);
+      toast.success("Accounts manager created");
       setIsDialogOpen(false);
       accountsForm.reset();
-      setEditingId(null);
-    } catch {
-      toast.error("Operation failed");
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err?.message ?? "Failed to create account manager");
     } finally {
       setIsSubmitting(false);
     }
   }
-
-  // Inactivate / Activate (toggle) -- admin-only
-  async function toggleActive(id: string, type: "service" | "customer" | "accounts") {
-    if (!currentUser.isAdmin) return toast.error("Not authorized");
-    try {
-      await new Promise((r) => setTimeout(r, 400));
-      if (type === "service") {
-        setServiceTypes((prev) =>
-          prev.map((s) => (s.id === id && s.companyId === companyId ? { ...s, isActive: !s.isActive } : s))
-        );
-        toast.success("Service status updated");
-      } else if (type === "customer") {
-        setCustomerTypes((prev) =>
-          prev.map((c) => (c.id === id && c.companyId === companyId ? { ...c, isActive: !c.isActive } : c))
-        );
-        toast.success("Customer type status updated");
-      } else {
-        setAccountsManagers((prev) =>
-          prev.map((a) => (a.id === id && a.companyId === companyId ? { ...a, isActive: !a.isActive } : a))
-        );
-        toast.success("Accounts manager status updated");
-      }
-    } catch {
-      toast.error("Operation failed");
-    }
-  }
-
-  /**
-   * Notes / integration points:
-   * - When creating invoices, pick a serviceTypeId from visibleServiceTypes and display its name + description on invoice.
-   * - For revenue reports, group invoices by serviceTypeId and customerTypeId and sum amounts (not implemented here).
-   */
 
   return (
     <div className="p-8">
       <div className="mb-6">
         <h1 className="text-2xl font-bold">Service / Customer Types & Accounts Managers</h1>
         <p className="text-muted-foreground">
-          Company: <strong>{companies.find(c => c.id === companyId)?.name}</strong> — {currentUser.isAdmin ? "Admin" : "User"}
+          Company: <strong>{companies.find((c) => c.id === companyId)?.name}</strong> —{" "}
+          {currentUser.isAdmin ? "Admin" : "User"}
         </p>
       </div>
 
@@ -491,67 +715,73 @@ export default function ServiceTypesPage() {
             <div className="relative">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search types or managers..."
+                placeholder="Search..."
                 className="pl-8 w-[300px]"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
 
-            <Button
-              onClick={() => openCreateDialog(activeTab as any)}
-              disabled={!currentUser.isAdmin}
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Add New
+            <Button onClick={() => openCreateDialog(activeTab as any)} disabled={!currentUser.isAdmin}>
+              <Plus className="mr-2 h-4 w-4" /> Add New
             </Button>
           </div>
         </div>
 
-        {/* --- SERVICE TYPES TAB --- */}
-        <TabsContent value="service" className="mt-0">
+        {/* Service tab */}
+        <TabsContent value="service">
           <div className="rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Code</TableHead>
                   <TableHead>Name</TableHead>
-                  <TableHead>SAC Code</TableHead>
                   <TableHead>Description</TableHead>
                   <TableHead>Tax Rate</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead className="w-[120px]">Actions</TableHead>
+                  <TableHead className="w-[160px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredServiceTypes.map((type) => (
-                  <TableRow key={type.id}>
-                    <TableCell className="font-medium">{type.code}</TableCell>
-                    <TableCell>{type.name}</TableCell>
-                    <TableCell>{type.sacCode}</TableCell> 
-                    <TableCell>{type.description}</TableCell>
-                    <TableCell>{type.taxRate}%</TableCell>
-                    <TableCell>
-                      <span className={`inline-block rounded-full px-2 py-0.5 text-sm ${type.isActive ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-700"}`}>
-                        {type.isActive ? "Active" : "Inactive"}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Button variant="ghost" size="icon" onClick={() => openEditDialog("service", type.id)}>
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => toggleActive(type.id, "service")}>
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </div>
+                {isLoadingServices ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="p-6 text-center">
+                      <Loader2 className="inline-block animate-spin" /> Loading...
                     </TableCell>
                   </TableRow>
-                ))}
-                {filteredServiceTypes.length === 0 && (
+                ) : filteredServiceTypes.length ? (
+                  filteredServiceTypes.map((type) => (
+                    <TableRow key={type.id}>
+                      <TableCell className="font-medium">{type.code}</TableCell>
+                      <TableCell>{type.name}</TableCell>
+                      <TableCell>{type.description}</TableCell>
+                      <TableCell>{type.taxRate ?? 0}%</TableCell>
+                      <TableCell>
+                        <span
+                          className={`inline-block rounded-full px-2 py-0.5 text-sm ${
+                            type.isActive ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-700"
+                          }`}
+                        >
+                          {type.isActive ? "Active" : "Inactive"}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Button variant="ghost" size="icon" onClick={() => openEditDialog("service", type.id)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+
+                          <Button variant="ghost" size="icon" onClick={() => deleteServiceType(type.id)}>
+                            <Trash2 className="h-4 w-4 text-red-600" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : (
                   <TableRow>
                     <TableCell colSpan={6} className="text-center p-6 text-muted-foreground">
-                      No service types found for this company.
+                      No service types found.
                     </TableCell>
                   </TableRow>
                 )}
@@ -560,8 +790,8 @@ export default function ServiceTypesPage() {
           </div>
         </TabsContent>
 
-        {/* --- CUSTOMER TYPES TAB --- */}
-        <TabsContent value="customer" className="mt-0">
+        {/* Customer tab */}
+        <TabsContent value="customer">
           <div className="rounded-md border">
             <Table>
               <TableHeader>
@@ -575,33 +805,45 @@ export default function ServiceTypesPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredCustomerTypes.map((type) => (
-                  <TableRow key={type.id}>
-                    <TableCell className="font-medium">{type.code}</TableCell>
-                    <TableCell>{type.name}</TableCell>
-                    <TableCell>{type.description}</TableCell>
-                    <TableCell>{type.paymentTerms} days</TableCell>
-                    <TableCell>
-                      <span className={`inline-block rounded-full px-2 py-0.5 text-sm ${type.isActive ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-700"}`}>
-                        {type.isActive ? "Active" : "Inactive"}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Button variant="ghost" size="icon" onClick={() => openEditDialog("customer", type.id)}>
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => toggleActive(type.id, "customer")}>
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </div>
+                {isLoadingCustomers ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="p-6 text-center">
+                      <Loader2 className="inline-block animate-spin" /> Loading...
                     </TableCell>
                   </TableRow>
-                ))}
-                {filteredCustomerTypes.length === 0 && (
+                ) : filteredCustomerTypes.length ? (
+                  filteredCustomerTypes.map((t) => (
+                    <TableRow key={t.id}>
+                      <TableCell className="font-medium">{t.code}</TableCell>
+                      <TableCell>{t.name}</TableCell>
+                      <TableCell>{t.description}</TableCell>
+                      <TableCell>{t.paymentTerms ?? "-"}</TableCell>
+                      <TableCell>
+                        <span
+                          className={`inline-block rounded-full px-2 py-0.5 text-sm ${
+                            t.isActive ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-700"
+                          }`}
+                        >
+                          {t.isActive ? "Active" : "Inactive"}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Button variant="ghost" size="icon" onClick={() => openEditDialog("customer", t.id)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+
+                          <Button variant="ghost" size="icon" onClick={() => deleteCustomerType(t.id)}>
+                            <Trash2 className="h-4 w-4 text-red-600" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : (
                   <TableRow>
                     <TableCell colSpan={6} className="text-center p-6 text-muted-foreground">
-                      No customer types found for this company.
+                      No customer types found.
                     </TableCell>
                   </TableRow>
                 )}
@@ -610,8 +852,8 @@ export default function ServiceTypesPage() {
           </div>
         </TabsContent>
 
-        {/* --- ACCOUNTS MANAGERS TAB --- */}
-        <TabsContent value="accounts" className="mt-0">
+        {/* Accounts tab (GET + POST only) */}
+        <TabsContent value="accounts">
           <div className="rounded-md border">
             <Table>
               <TableHeader>
@@ -624,32 +866,38 @@ export default function ServiceTypesPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredAccounts.map((m) => (
-                  <TableRow key={m.id}>
-                    <TableCell className="font-medium">{m.name}</TableCell>
-                    <TableCell>{m.email}</TableCell>
-                    <TableCell>{m.phone}</TableCell>
-                    <TableCell>
-                      <span className={`inline-block rounded-full px-2 py-0.5 text-sm ${m.isActive ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-700"}`}>
-                        {m.isActive ? "Active" : "Inactive"}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Button variant="ghost" size="icon" onClick={() => openEditDialog("accounts", m.id)}>
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => toggleActive(m.id, "accounts")}>
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </div>
+                {isLoadingAccounts ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="p-6 text-center">
+                      <Loader2 className="inline-block animate-spin" /> Loading...
                     </TableCell>
                   </TableRow>
-                ))}
-                {filteredAccounts.length === 0 && (
+                ) : filteredAccounts.length ? (
+                  filteredAccounts.map((a) => (
+                    <TableRow key={a.id}>
+                      <TableCell>{a.name}</TableCell>
+                      <TableCell>{a.email}</TableCell>
+                      <TableCell>{a.phone}</TableCell>
+                      <TableCell>
+                        <span className={`inline-block rounded-full px-2 py-0.5 text-sm ${a.isActive ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-700"}`}>
+                          {a.isActive ? "Active" : "Inactive"}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          {/* Editing accounts is intentionally disabled (backend supports only create + get per your request).
+                              Keep a view-only Pencil that opens the dialog but saving will not perform PUT. */}
+                          <Button variant="ghost" size="icon" onClick={() => openEditDialog("accounts", a.id)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : (
                   <TableRow>
                     <TableCell colSpan={5} className="text-center p-6 text-muted-foreground">
-                      No accounts managers found for this company.
+                      No accounts managers found.
                     </TableCell>
                   </TableRow>
                 )}
@@ -659,7 +907,7 @@ export default function ServiceTypesPage() {
         </TabsContent>
       </Tabs>
 
-      {/* ---------- Dialog for Create / Edit ---------- */}
+      {/* Dialog for create/edit */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -669,180 +917,62 @@ export default function ServiceTypesPage() {
             </DialogTitle>
             <DialogDescription>
               {dialogMode === "service" && "Service type belongs to current company only."}
-              {dialogMode === "customer" && "Customer types will appear in Customer Master for selection."}
-              {dialogMode === "accounts" && "Accounts managers can be assigned to customers/invoices."}
+              {dialogMode === "customer" && "Customer type belongs to current company only."}
+              {dialogMode === "accounts" && "Create new accounts manager (backend supports only create + get). Editing is view-only here."}
             </DialogDescription>
           </DialogHeader>
 
-     {dialogMode === "service" && (
-  <Form {...serviceTypeForm}>
-    <form
-      onSubmit={serviceTypeForm.handleSubmit(onSubmitServiceType)}
-      className="space-y-4"
-    >
-      {/* --- Code --- */}
-      <FormField
-        control={serviceTypeForm.control}
-        name="code"
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>Code</FormLabel>
-            <FormControl>
-              <Input placeholder="Enter code" {...field} />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-
-      {/* --- Name --- */}
-      <FormField
-        control={serviceTypeForm.control}
-        name="name"
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>Name</FormLabel>
-            <FormControl>
-              <Input placeholder="Enter name" {...field} />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-
-      {/* ✅ NEW: SAC Code Field */}
-      <FormField
-        control={serviceTypeForm.control}
-        name="sacCode"
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>SAC Code</FormLabel>
-            <FormControl>
-              <Input placeholder="Enter SAC code (e.g. 998311)" {...field} />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-
-      {/* --- Description --- */}
-      <FormField
-        control={serviceTypeForm.control}
-        name="description"
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>Description</FormLabel>
-            <FormControl>
-              <Input placeholder="Enter description" {...field} />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-
-      {/* --- Tax Rate --- */}
-      <FormField
-        control={serviceTypeForm.control}
-        name="taxRate"
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>Tax Rate (%)</FormLabel>
-            <FormControl>
-              <Input
-                type="number"
-                placeholder="Enter tax rate"
-                {...field}
-                onChange={(e) => field.onChange(Number(e.target.value))}
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-
-      {/* --- Active Status --- */}
-      <FormField
-        control={serviceTypeForm.control}
-        name="isActive"
-        render={({ field }) => (
-          <FormItem className="flex items-center justify-between rounded-lg border p-4">
-            <div className="space-y-0.5">
-              <FormLabel>Active Status</FormLabel>
-              <p className="text-sm text-muted-foreground">
-                Enable if this service type is active
-              </p>
-            </div>
-            <FormControl>
-              <Switch
-                checked={field.value}
-                onCheckedChange={field.onChange}
-              />
-            </FormControl>
-          </FormItem>
-        )}
-      />
-
-      {/* --- Footer --- */}
-      <DialogFooter>
-        <Button
-          variant="outline"
-          type="button"
-          onClick={() => {
-            setIsDialogOpen(false);
-            setEditingId(null);
-          }}
-        >
-          Cancel
-        </Button>
-        <Button type="submit" disabled={isSubmitting}>
-          {isSubmitting && (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          )}
-          {editingId ? "Update" : "Create"}
-        </Button>
-      </DialogFooter>
-    </form>
-  </Form>
-)}
-
-          {dialogMode === "customer" && (
-            <Form {...customerTypeForm}>
-              <form onSubmit={customerTypeForm.handleSubmit(onSubmitCustomerType)} className="space-y-4">
-                <FormField control={customerTypeForm.control} name="code" render={({ field }) => (
+          {dialogMode === "service" && (
+            <Form {...serviceTypeForm}>
+              <form onSubmit={serviceTypeForm.handleSubmit(submitServiceType)} className="space-y-4">
+                <FormField control={serviceTypeForm.control} name="code" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Code</FormLabel>
-                    <FormControl><Input placeholder="Enter code" {...field} /></FormControl>
+                    <FormControl>
+                      <Input {...field} placeholder="Code" />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
-                <FormField control={customerTypeForm.control} name="name" render={({ field }) => (
+
+                <FormField control={serviceTypeForm.control} name="name" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Name</FormLabel>
-                    <FormControl><Input placeholder="Enter name" {...field} /></FormControl>
+                    <FormControl>
+                      <Input {...field} placeholder="Name" />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
-                <FormField control={customerTypeForm.control} name="description" render={({ field }) => (
+
+                <FormField control={serviceTypeForm.control} name="description" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Description</FormLabel>
-                    <FormControl><Input placeholder="Enter description" {...field} /></FormControl>
+                    <FormControl>
+                      <Input {...field} placeholder="Description" />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
-                <FormField control={customerTypeForm.control} name="paymentTerms" render={({ field }) => (
+
+                <FormField control={serviceTypeForm.control} name="taxRate" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Payment Terms (days)</FormLabel>
-                    <FormControl><Input type="number" placeholder="Enter payment terms" {...field} onChange={(e) => field.onChange(Number(e.target.value))} /></FormControl>
+                    <FormLabel>Tax Rate (%)</FormLabel>
+                    <FormControl>
+                      <Input {...field} type="number" onChange={(e) => field.onChange(Number(e.target.value))} placeholder="Tax rate" />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
-                <FormField control={customerTypeForm.control} name="isActive" render={({ field }) => (
+
+                <FormField control={serviceTypeForm.control} name="isActive" render={({ field }) => (
                   <FormItem className="flex items-center justify-between rounded-lg border p-4">
-                    <div className="space-y-0.5">
-                      <FormLabel>Active Status</FormLabel>
-                      <p className="text-sm text-muted-foreground">Enable if this customer type is active</p>
+                    <div>
+                      <FormLabel>Active</FormLabel>
                     </div>
-                    <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                    <FormControl>
+                      <Switch checked={field.value} onCheckedChange={field.onChange} />
+                    </FormControl>
                   </FormItem>
                 )} />
 
@@ -851,44 +981,71 @@ export default function ServiceTypesPage() {
                     Cancel
                   </Button>
                   <Button type="submit" disabled={isSubmitting}>
-                    {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} {editingId ? "Update" : "Create"}
+                    {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {editingId ? "Update" : "Create"}
                   </Button>
                 </DialogFooter>
               </form>
             </Form>
           )}
 
-          {dialogMode === "accounts" && (
-            <Form {...accountsForm}>
-              <form onSubmit={accountsForm.handleSubmit(onSubmitAccounts)} className="space-y-4">
-                <FormField control={accountsForm.control} name="name" render={({ field }) => (
+          {/* Customer form - integrated with API */}
+          {dialogMode === "customer" && (
+            <Form {...customerTypeForm}>
+              <form onSubmit={customerTypeForm.handleSubmit(submitCustomerType)} className="space-y-4">
+                <FormField control={customerTypeForm.control} name="code" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Code</FormLabel>
+                    <FormControl>
+                      <Input {...field} placeholder="Code" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+
+                <FormField control={customerTypeForm.control} name="name" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Name</FormLabel>
-                    <FormControl><Input placeholder="Enter name" {...field} /></FormControl>
+                    <FormControl>
+                      <Input {...field} placeholder="Name" />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
-                <FormField control={accountsForm.control} name="email" render={({ field }) => (
+
+                <FormField control={customerTypeForm.control} name="description" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Email</FormLabel>
-                    <FormControl><Input type="email" placeholder="Enter email" {...field} /></FormControl>
+                    <FormLabel>Description</FormLabel>
+                    <FormControl>
+                      <Input {...field} placeholder="Description" />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
-                <FormField control={accountsForm.control} name="phone" render={({ field }) => (
+
+                <FormField control={customerTypeForm.control} name="paymentTerms" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Phone</FormLabel>
-                    <FormControl><Input placeholder="Enter phone (optional)" {...field} /></FormControl>
+                    <FormLabel>Payment Terms (days)</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        type="number"
+                        onChange={(e) => field.onChange(Number(e.target.value))}
+                        placeholder="Payment terms"
+                      />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />
-                <FormField control={accountsForm.control} name="isActive" render={({ field }) => (
+
+                <FormField control={customerTypeForm.control} name="isActive" render={({ field }) => (
                   <FormItem className="flex items-center justify-between rounded-lg border p-4">
-                    <div className="space-y-0.5">
-                      <FormLabel>Active Status</FormLabel>
-                      <p className="text-sm text-muted-foreground">Enable if this manager is active</p>
+                    <div>
+                      <FormLabel>Active</FormLabel>
                     </div>
-                    <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} /></FormControl>
+                    <FormControl>
+                      <Switch checked={field.value} onCheckedChange={field.onChange} />
+                    </FormControl>
                   </FormItem>
                 )} />
 
@@ -897,7 +1054,65 @@ export default function ServiceTypesPage() {
                     Cancel
                   </Button>
                   <Button type="submit" disabled={isSubmitting}>
-                    {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} {editingId ? "Update" : "Create"}
+                    {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {editingId ? "Update" : "Create"}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </Form>
+          )}
+
+          {/* Accounts form (POST only) */}
+          {dialogMode === "accounts" && (
+            <Form {...accountsForm}>
+              <form onSubmit={accountsForm.handleSubmit(async (v) => {
+                // Note: backend supports only create + get per your instruction
+                // If editingId is set, we treat dialog as view-only (no PUT)
+                if (editingId) {
+                  // editing not supported (backend is POST-only for accounts). Inform user.
+                  toast.error("Editing accounts manager is not supported. Create only.");
+                  return;
+                }
+                await submitAccountManagerCreate(v);
+              })} className="space-y-4">
+                <FormField control={accountsForm.control} name="name" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Name</FormLabel>
+                    <FormControl><Input {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={accountsForm.control} name="email" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Email</FormLabel>
+                    <FormControl><Input {...field} type="email" /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={accountsForm.control} name="phone" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Phone</FormLabel>
+                    <FormControl><Input {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+
+                <FormField control={accountsForm.control} name="isActive" render={({ field }) => (
+                  <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                    <div>
+                      <FormLabel>Active</FormLabel>
+                    </div>
+                    <FormControl>
+                      <Switch checked={field.value} onCheckedChange={field.onChange} />
+                    </FormControl>
+                  </FormItem>
+                )} />
+
+                <DialogFooter>
+                  <Button variant="outline" type="button" onClick={() => { setIsDialogOpen(false); setEditingId(null); }}>Cancel</Button>
+                  <Button type="submit" disabled={isSubmitting}>
+                    {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Create
                   </Button>
                 </DialogFooter>
               </form>

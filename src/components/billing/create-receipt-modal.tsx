@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
+
 import {
   Dialog,
   DialogContent,
@@ -9,8 +10,10 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+
 import {
   Form,
   FormControl,
@@ -19,6 +22,7 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+
 import {
   Select,
   SelectContent,
@@ -26,135 +30,195 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+
 import { Calendar } from "@/components/ui/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { CalendarIcon } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
-import { mockCompanies, mockCustomers, mockInvoices } from "@/lib/mock-data";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { apiFetch } from "@/lib/api";
 
+// -----------------------------------------------------------------------------
+// VALIDATION (Relaxed but correct for backend)
+// -----------------------------------------------------------------------------
 const receiptSchema = z.object({
-  companyId: z.string().min(1, "Company is required"),
-  receiptId: z.string().min(1, "Receipt ID is required"),
+  receiptId: z.string(),
   receiptDate: z.date(),
-  customerId: z.string().min(1, "Customer is required"),
-  paymentMethod: z.string().min(1, "Payment method is required"),
-  tdsAmount: z.number().min(0),
-  amountReceived: z.number().min(1, "Amount must be greater than 0"),
-  chequeNo: z.string().optional(),
-  bankName: z.string().optional(),
-  chequeDate: z.date().optional(),
+  customerId: z.string(),
+  paymentMethod: z.string(),
+  amountReceived: z.number(),
+  notes: z.string().optional(),
+  allocations: z.array(
+    z.object({
+      invoiceId: z.string(),
+      amountAllocated: z.number(),
+    })
+  ),
 });
 
 type ReceiptFormValues = z.infer<typeof receiptSchema>;
 
-let companyReceiptCounts: Record<string, number> = {};
-
-export function CreateReceiptModal({ open, onOpenChange, onReceiptCreated }: any) {
-  const [selectedCompany, setSelectedCompany] = useState<any>(null);
-  const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
-  const [customerInvoices, setCustomerInvoices] = useState<any[]>([]);
-  const [selectedInvoices, setSelectedInvoices] = useState<any[]>([]);
+export default function CreateReceiptModal({
+  open,
+  onOpenChange,
+  onReceiptCreated,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  onReceiptCreated?: () => void;
+}) {
+  const [customers, setCustomers] = useState<any[]>([]);
+  const [invoices, setInvoices] = useState<any[]>([]);
+  const [selectedInvoices, setSelectedInvoices] = useState<Record<string, boolean>>({});
   const [allocations, setAllocations] = useState<Record<string, number>>({});
+  const [loadingMeta, setLoadingMeta] = useState(true);
+  const [creating, setCreating] = useState(false);
 
   const form = useForm<ReceiptFormValues>({
     resolver: zodResolver(receiptSchema),
     defaultValues: {
+      receiptId: "",
       receiptDate: new Date(),
-      tdsAmount: 0,
+      paymentMethod: "cash",
       amountReceived: 0,
+      notes: "",
+      allocations: [],
     },
   });
 
-  // ✅ Generate sequential receipt per company
-  const generateReceiptNo = (companyId: string) => {
-    companyReceiptCounts[companyId] = (companyReceiptCounts[companyId] || 0) + 1;
-    const company = mockCompanies.find((c) => c.id === companyId);
-    const prefix = company?.prefix || company?.name.substring(0, 3).toUpperCase();
-    return `${prefix}-RCT-${companyReceiptCounts[companyId]
-      .toString()
-      .padStart(3, "0")}`;
-  };
+  // ---------------------------------------------------------------------------
+  // LOAD Customrs + Invoices (with normalization)
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    const loadMeta = async () => {
+      try {
+        const cRes = await apiFetch("/api/v1/api/v1/customers");
+        const iRes = await apiFetch("/api/v1/api/v1/invoices");
 
-  const handleCompanyChange = (companyId: string) => {
-    setSelectedCompany(companyId);
-    const newReceiptId = generateReceiptNo(companyId);
-    form.setValue("receiptId", newReceiptId);
-  };
+        const cJson = await cRes.json();
+        const iJson = await iRes.json();
 
-  const handleCustomerChange = (customerId: string) => {
-    const customer = mockCustomers.find((c) => c.id === customerId);
-    setSelectedCustomer(customer || null);
+        // Customers
+        setCustomers(Array.isArray(cJson) ? cJson : cJson.data || []);
 
-    const filtered = mockInvoices.filter(
-      (inv) =>
-        inv.customer === customer?.name &&
-        inv.companyId === selectedCompany &&
-        inv.status !== "Paid"
-    );
+        // Normalize invoices so UI NEVER breaks
+        const rawInvoices = Array.isArray(iJson) ? iJson : iJson.data || [];
 
-    setCustomerInvoices(filtered);
-  };
+        const formatted = rawInvoices.map((inv: any) => ({
+          id: inv.id || inv._id || inv.invoiceId || "",
+          customerId:
+            inv.customerId || inv.customer || inv.client || "",
+          invoiceNumber:
+            inv.invoiceNumber ||
+            inv.invoiceNo ||
+            inv.no ||
+            inv.number ||
+            "N/A",
+          totalAmount:
+            inv.totalAmount || inv.amount || inv.total || 0,
+        }));
 
-  const toggleInvoice = (invoice: any) => {
-    setSelectedInvoices((prev) =>
-      prev.some((i) => i.id === invoice.id)
-        ? prev.filter((i) => i.id !== invoice.id)
-        : [...prev, invoice]
-    );
-  };
+        setInvoices(formatted);
 
-  const updateAllocation = (invoiceId: string, value: number) => {
+        // Generate receipt ID
+        form.setValue(
+          "receiptId",
+          `RCT-${Date.now().toString().slice(-6)}`
+        );
+      } catch (err) {
+        toast.error("Failed to load data");
+      } finally {
+        setLoadingMeta(false);
+      }
+    };
+
+    if (open) loadMeta();
+  }, [open]);
+
+  // ---------------------------------------------------------------------------
+  // FILTER INVOICES BY CUSTOMER
+  // ---------------------------------------------------------------------------
+  const customerId = form.watch("customerId");
+  const filteredInvoices = invoices.filter(
+    (inv) => inv.customerId === customerId
+  );
+
+  // ---------------------------------------------------------------------------
+  // ALLOCATION value update
+  // ---------------------------------------------------------------------------
+  const updateAllocation = (id: string, value: number) => {
     setAllocations((prev) => ({
       ...prev,
-      [invoiceId]: isNaN(value) ? 0 : value,
+      [id]: value,
     }));
   };
 
-  const tdsAmount = form.watch("tdsAmount");
-  const amountReceived = form.watch("amountReceived");
-  const netPayment = amountReceived - (tdsAmount || 0);
+  // ---------------------------------------------------------------------------
+  // SUBMIT (Final working logic)
+  // ---------------------------------------------------------------------------
+  const onSubmit = async (data: ReceiptFormValues) => {
+  setCreating(true);
 
-  const onSubmit = (data: ReceiptFormValues) => {
-    const now = new Date();
-    const receipt = {
-      ...data,
-      companyId: selectedCompany,
-      companyName: mockCompanies.find((c) => c.id === selectedCompany)?.name,
-      customer: selectedCustomer?.name,
-      invoices: selectedInvoices.map((i) => ({
-        id: i.id,
-        number: i.invoiceNumber,
-        allocated: allocations[i.id] || 0,
-      })),
-      netPayment,
-      createdAt: now.toISOString(),
-      createdBy: "Manager",
-      auditTrail: [
-        {
-          action: "Created",
-          by: "Manager",
-          timestamp: now.toISOString(),
-        },
-      ],
-    };
+  const selected = Object.keys(selectedInvoices).filter(
+    (id) => selectedInvoices[id]
+  );
 
-    console.log("✅ Receipt Created:", receipt);
-    toast.success("Receipt created successfully!");
+  if (selected.length === 0) {
+    toast.error("Please select at least one invoice for allocation");
+    setCreating(false);
+    return;
+  }
 
-    // Mock invoice update for outstanding balance
-    selectedInvoices.forEach((inv) => {
-      const allocated = allocations[inv.id] || 0;
-      if (allocated >= inv.amount) inv.status = "Paid";
-      else inv.status = "Partially Paid";
-    });
+  const allocationArray = selected.map((id) => ({
+    invoiceId: id,
+    amountAllocated: allocations[id] >= 0.01 ? allocations[id] : 0.01,
+  }));
 
-    onReceiptCreated();
-    onOpenChange(false);
+  const payload = {
+    receiptId: data.receiptId,
+    receiptDate: data.receiptDate.toISOString().split("T")[0], // FIXED
+    customerId: data.customerId,
+    paymentMethod: data.paymentMethod,
+    amountReceived: data.amountReceived,
+    notes: data.notes || "",
+    allocations: allocationArray,
   };
 
+  try {
+    const res = await apiFetch("/api/v1/api/v1/receipts", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+
+    const json = await res.json();
+
+    if (!res.ok) {
+      toast.error(json.message || "Failed to create receipt");
+      return;
+    }
+
+    toast.success("Receipt created successfully!");
+    onReceiptCreated?.();
+    onOpenChange(false);
+    form.reset();
+    setSelectedInvoices({});
+    setAllocations({});
+  } catch (err) {
+    toast.error("Network error");
+  } finally {
+    setCreating(false);
+  }
+};
+
+  // ---------------------------------------------------------------------------
+  // UI
+  // ---------------------------------------------------------------------------
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
@@ -162,29 +226,27 @@ export function CreateReceiptModal({ open, onOpenChange, onReceiptCreated }: any
           <DialogTitle>Create Receipt</DialogTitle>
         </DialogHeader>
 
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-            {/* --- Company / Receipt --- */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {loadingMeta ? (
+          <div className="p-4 text-center">Loading...</div>
+        ) : (
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+              {/* CUSTOMER */}
               <FormField
                 control={form.control}
-                name="companyId"
+                name="customerId"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Company</FormLabel>
-                    <Select
-                      onValueChange={(val) => {
-                        field.onChange(val);
-                        handleCompanyChange(val);
-                      }}
-                    >
+                    <FormLabel>Customer</FormLabel>
+                    <Select onValueChange={field.onChange}>
                       <FormControl>
                         <SelectTrigger>
-                          <SelectValue placeholder="Select company" />
+                          <SelectValue placeholder="Select customer" />
                         </SelectTrigger>
                       </FormControl>
+
                       <SelectContent>
-                        {mockCompanies.map((c) => (
+                        {customers.map((c: any) => (
                           <SelectItem key={c.id} value={c.id}>
                             {c.name}
                           </SelectItem>
@@ -196,235 +258,29 @@ export function CreateReceiptModal({ open, onOpenChange, onReceiptCreated }: any
                 )}
               />
 
-              <FormItem>
-                <FormLabel>Receipt No</FormLabel>
-                <Input disabled value={form.watch("receiptId")} />
-              </FormItem>
-
-              <FormField
-                control={form.control}
-                name="receiptDate"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Receipt Date</FormLabel>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <FormControl>
-                          <Button variant="outline" className="w-full justify-start">
-                            <CalendarIcon className="mr-2 h-4 w-4" />
-                            {field.value ? format(field.value, "PPP") : "Select date"}
-                          </Button>
-                        </FormControl>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
-                        <Calendar
-                          mode="single"
-                          selected={field.value}
-                          onSelect={field.onChange}
-                        />
-                      </PopoverContent>
-                    </Popover>
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            {/* --- Customer --- */}
-            <FormField
-              control={form.control}
-              name="customerId"
-              render={({ field }) => (
+              {/* RECEIPT ID + DATE */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormItem>
-                  <FormLabel>Customer</FormLabel>
-                  <Select
-                    onValueChange={(val) => {
-                      field.onChange(val);
-                      handleCustomerChange(val);
-                    }}
-                  >
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select customer" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {mockCustomers.map((c) => (
-                        <SelectItem key={c.id} value={c.id}>
-                          {c.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <FormLabel>Receipt No</FormLabel>
+                  <Input disabled {...form.register("receiptId")} />
                 </FormItem>
-              )}
-            />
-
-            {/* --- Outstanding Bills --- */}
-            {customerInvoices.length > 0 && (
-              <Card>
-                <CardContent>
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b font-medium">
-                        <th></th>
-                        <th>Invoice No</th>
-                        <th>Amount</th>
-                        <th>Allocate</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {customerInvoices.map((invoice) => (
-                        <tr key={invoice.id} className="border-t">
-                          <td className="text-center">
-                            <Checkbox
-                              checked={selectedInvoices.some((i) => i.id === invoice.id)}
-                              onCheckedChange={() => toggleInvoice(invoice)}
-                            />
-                          </td>
-                          <td>{invoice.invoiceNumber}</td>
-                          <td>₹{invoice.amount.toLocaleString()}</td>
-                          <td>
-                            <Input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              className="w-24"
-                              disabled={!selectedInvoices.some((i) => i.id === invoice.id)}
-                              value={allocations[invoice.id] || ""}
-                              onChange={(e) =>
-                                updateAllocation(
-                                  invoice.id,
-                                  parseFloat(e.target.value) || 0
-                                )
-                              }
-                            />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* --- TDS / Payment --- */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <FormField
-                control={form.control}
-                name="tdsAmount"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>TDS Amount</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        min="0"
-                        {...field}
-                        onChange={(e) =>
-                          field.onChange(parseFloat(e.target.value) || 0)
-                        }
-                      />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="amountReceived"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Total Received</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        min="0"
-                        {...field}
-                        onChange={(e) =>
-                          field.onChange(parseFloat(e.target.value) || 0)
-                        }
-                      />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-
-              <FormItem>
-                <FormLabel>Net Payment After TDS</FormLabel>
-                <Input value={netPayment.toFixed(2)} disabled />
-              </FormItem>
-            </div>
-
-            {/* --- Payment Mode --- */}
-            <FormField
-              control={form.control}
-              name="paymentMethod"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Payment Mode</FormLabel>
-                  <Select onValueChange={field.onChange}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select payment mode" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="Cash">Cash</SelectItem>
-                      <SelectItem value="Bank Transfer">Bank Transfer</SelectItem>
-                      <SelectItem value="UPI">UPI</SelectItem>
-                      <SelectItem value="Cheque">Cheque</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </FormItem>
-              )}
-            />
-
-            {/* --- Cheque Details --- */}
-            {form.watch("paymentMethod") === "Cheque" && (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <FormField
-                  control={form.control}
-                  name="chequeNo"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Cheque No</FormLabel>
-                      <FormControl>
-                        <Input {...field} />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
 
                 <FormField
                   control={form.control}
-                  name="bankName"
+                  name="receiptDate"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Bank Name</FormLabel>
-                      <FormControl>
-                        <Input {...field} />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="chequeDate"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Cheque Date</FormLabel>
+                      <FormLabel>Receipt Date</FormLabel>
                       <Popover>
                         <PopoverTrigger asChild>
                           <FormControl>
                             <Button variant="outline" className="w-full justify-start">
                               <CalendarIcon className="mr-2 h-4 w-4" />
-                              {field.value
-                                ? format(field.value, "PPP")
-                                : "Select date"}
+                              {field.value ? format(field.value, "PPP") : "Select date"}
                             </Button>
                           </FormControl>
                         </PopoverTrigger>
+
                         <PopoverContent className="w-auto p-0" align="start">
                           <Calendar
                             mode="single"
@@ -437,16 +293,141 @@ export function CreateReceiptModal({ open, onOpenChange, onReceiptCreated }: any
                   )}
                 />
               </div>
-            )}
 
-            <DialogFooter>
-              <Button variant="outline" onClick={() => onOpenChange(false)}>
-                Cancel
-              </Button>
-              <Button type="submit">Create Receipt</Button>
-            </DialogFooter>
-          </form>
-        </Form>
+              {/* INVOICE LIST */}
+              {filteredInvoices.length > 0 && (
+                <Card>
+                  <CardContent>
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b font-medium">
+                          <th></th>
+                          <th>Invoice No</th>
+                          <th>Amount</th>
+                          <th>Allocate</th>
+                        </tr>
+                      </thead>
+
+                      <tbody>
+                        {filteredInvoices.map((inv) => (
+                          <tr key={inv.id} className="border-t">
+                            <td className="text-center">
+                              <Checkbox
+                                checked={!!selectedInvoices[inv.id]}
+                                onCheckedChange={() =>
+                                  setSelectedInvoices((prev) => ({
+                                    ...prev,
+                                    [inv.id]: !prev[inv.id],
+                                  }))
+                                }
+                              />
+                            </td>
+
+                            <td>{inv.invoiceNumber}</td>
+                            <td>₹{inv.totalAmount}</td>
+
+                            <td>
+                              <Input
+                                disabled={!selectedInvoices[inv.id]}
+                                type="number"
+                                step="0.01"
+                                min="0.01"
+                                className="w-24"
+                                value={allocations[inv.id] || ""}
+                                onChange={(e) =>
+                                  updateAllocation(
+                                    inv.id,
+                                    parseFloat(e.target.value) || 0.01
+                                  )
+                                }
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* PAYMENT */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <FormField
+                  control={form.control}
+                  name="paymentMethod"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Payment Mode</FormLabel>
+                      <Select
+                        defaultValue="cash"
+                        onValueChange={field.onChange}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select payment mode" />
+                          </SelectTrigger>
+                        </FormControl>
+
+                        <SelectContent>
+                          <SelectItem value="cash">Cash</SelectItem>
+                          <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                          <SelectItem value="upi">UPI</SelectItem>
+                          <SelectItem value="cheque">Cheque</SelectItem>
+                          <SelectItem value="card">Card</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="amountReceived"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Amount Received</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          min="0"
+                          {...field}
+                          onChange={(e) =>
+                            field.onChange(parseFloat(e.target.value) || 0)
+                          }
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="notes"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Notes</FormLabel>
+                      <FormControl>
+                        <Input {...field} placeholder="Optional note" />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              {/* SUBMIT BUTTONS */}
+              <DialogFooter>
+                <Button variant="outline" onClick={() => onOpenChange(false)}>
+                  Cancel
+                </Button>
+
+                <Button type="submit" disabled={creating}>
+                  {creating ? "Creating..." : "Create Receipt"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        )}
       </DialogContent>
     </Dialog>
   );

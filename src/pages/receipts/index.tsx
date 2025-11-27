@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -7,17 +7,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  CreditCard,
-  Building2,
-  FileText,
-  Download,
-  Eye,
-} from "lucide-react";
+import { CreditCard, Building2 } from "lucide-react";
+
 import { DataTable } from "@/components/receipts/data-table";
 import { columns } from "@/components/receipts/columns";
-import { mockReceipts, mockCompanies } from "@/lib/mock-data";
-import { CreateReceiptModal } from "@/components/billing/create-receipt-modal";
+
+import CreateReceiptModal from "@/components/billing/create-receipt-modal";
+
 import {
   Select,
   SelectTrigger,
@@ -26,37 +22,75 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 
-export default function ReceiptsPage() {
-  const [receipts, setReceipts] = useState(mockReceipts);
-  const [selectedCompany, setSelectedCompany] = useState<string>("all");
-  const [isCreateReceiptModalOpen, setIsCreateReceiptModalOpen] = useState(false);
+import { apiFetch } from "@/lib/api";
 
-  // ✅ Filter receipts company-wise
+export default function ReceiptsPage() {
+  const [receipts, setReceipts] = useState<any[]>([]);
+  const [company, setCompany] = useState<any | null>(null);
+
+  const [selectedCompany, setSelectedCompany] = useState<string>("all");
+  const [isCreateReceiptModalOpen, setIsCreateReceiptModalOpen] =
+    useState(false);
+
+  // ⭐ Load company
+  useEffect(() => {
+    async function loadCompany() {
+      try {
+        const res = await apiFetch("/api/v1/api/v1/company");
+        const data = await res.json();
+        if (res.ok) setCompany(data);
+      } catch (err) {
+        console.log("Company fetch error", err);
+      }
+    }
+    loadCompany();
+  }, []);
+
+  // ⭐ Load receipts from backend
+  async function loadReceipts() {
+    try {
+      const res = await apiFetch("/api/v1/api/v1/receipts");
+      const data = await res.json();
+
+      if (res.ok) {
+        const list = Array.isArray(data) ? data : data.data || [];
+
+        // ⭐ Normalize receipt values so table never breaks
+        const formatted = list.map((r: any) => ({
+          id: r.id || r._id,
+          companyId: r.companyId || r.company_id || company?.id || "",
+          receiptId: r.receiptId || r.receipt_id,
+          receiptDate: r.receiptDate || r.date,
+          customer: r.customerName || r.customer || "N/A",
+          amount: r.amountReceived || r.amount || 0,
+          paymentMethod: r.paymentMethod,
+          status: r.status || "Completed",
+          tdsAmount: r.tdsAmount || 0,
+        }));
+
+        setReceipts(formatted);
+      }
+    } catch (err) {
+      console.log("Receipt fetch error", err);
+    }
+  }
+
+  useEffect(() => {
+    loadReceipts();
+  }, []);
+
+  // ⭐ After creating receipt → reload from backend
+  const handleReceiptCreated = () => {
+    loadReceipts();
+  };
+
+  // ⭐ Filter receipts by company
   const filteredReceipts = useMemo(() => {
     if (selectedCompany === "all") return receipts;
     return receipts.filter((r) => r.companyId === selectedCompany);
   }, [selectedCompany, receipts]);
 
-  // ✅ Add new receipt (simulated)
-  const handleReceiptCreated = () => {
-    const newReceipt = {
-      id: `rct${receipts.length + 1}`,
-      companyId:
-        selectedCompany === "all" ? mockCompanies[0].id : selectedCompany,
-      receiptId: `RCT-${new Date().getFullYear()}-${(receipts.length + 1)
-        .toString()
-        .padStart(3, "0")}`,
-      receiptDate: new Date().toISOString().split("T")[0],
-      customer: "New Customer",
-      amount: Math.floor(Math.random() * 50000) + 5000,
-      paymentMethod: "Bank Transfer",
-      status: "Completed",
-      tdsAmount: Math.floor(Math.random() * 1000),
-    };
-    setReceipts([...receipts, newReceipt]);
-  };
-
-  // ✅ Quick summary
+  // ⭐ Summary values
   const totalReceipts = filteredReceipts.length;
   const totalAmount = filteredReceipts.reduce(
     (sum, r) => sum + (r.amount || 0),
@@ -90,13 +124,12 @@ export default function ReceiptsPage() {
           <SelectTrigger className="w-[220px]">
             <SelectValue placeholder="Select Company" />
           </SelectTrigger>
+
           <SelectContent>
             <SelectItem value="all">All Companies</SelectItem>
-            {mockCompanies.map((c) => (
-              <SelectItem key={c.id} value={c.id}>
-                {c.name}
-              </SelectItem>
-            ))}
+            {company && (
+              <SelectItem value={company.id}>{company.name}</SelectItem>
+            )}
           </SelectContent>
         </Select>
       </div>
@@ -137,17 +170,18 @@ export default function ReceiptsPage() {
             View, download, or audit receipt details.
           </CardDescription>
         </CardHeader>
+
         <CardContent>
           <DataTable columns={columns} data={filteredReceipts} />
         </CardContent>
       </Card>
 
-      {/* Receipt Creation Modal */}
+      {/* Create Receipt Modal */}
       <CreateReceiptModal
         open={isCreateReceiptModalOpen}
         onOpenChange={setIsCreateReceiptModalOpen}
         onReceiptCreated={handleReceiptCreated}
-        canEdit={true} // ✅ Managers can modify receipts (audit trail ready)
+        canEdit={true}
       />
     </div>
   );

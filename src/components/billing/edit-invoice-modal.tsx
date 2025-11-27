@@ -1,5 +1,5 @@
-// src/components/billing/create-invoice-modal.tsx
-import React, { useState, useEffect } from "react";
+// src/components/billing/edit-invoice-modal.tsx
+import React, { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -8,7 +8,6 @@ import { v4 as uuidv4 } from "uuid";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -34,110 +33,145 @@ import {
 } from "@/components/ui/select";
 
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, Trash2, Printer } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { apiFetch } from "@/lib/api";
 
-// ------------------ ZOD VALIDATION ------------------
+// ------------------ SCHEMAS ------------------
 const lineItemSchema = z.object({
   id: z.string().optional(),
-  serviceType: z.string().min(1, "Service is required"),
-  description: z.string().min(1, "Description is required"),
-  quantity: z.number().min(1, "Quantity must be > 0"),
-  rate: z.number().min(0, "Rate is required"),
-  taxRate: z.number().min(0, "Tax rate is required"),
+  serviceType: z.string().min(1),
+  description: z.string().min(1),
+  quantity: z.number().min(1),
+  rate: z.number().min(0),
+  taxRate: z.number().min(0),
 });
 
 const invoiceSchema = z.object({
-  invoiceNumber: z.string().min(1, "Invoice number is required"),
+  invoiceNumber: z.string().min(1),
   invoiceDate: z.coerce.date(),
-  customerId: z.string().min(1, "Customer is required"),
+  customerId: z.string().min(1),
   dueDate: z.coerce.date(),
-  referenceNumber: z.string().min(1, "Reference number is required"),
-  lineItems: z.array(lineItemSchema).min(1, "Add at least one line item"),
-  notes: z.string().min(1, "Notes are required"),
+  referenceNumber: z.string().optional(),
+  notes: z.string().optional(),
+  lineItems: z.array(lineItemSchema),
 });
 
 type InvoiceFormValues = z.infer<typeof invoiceSchema>;
 
-// Props
-interface CreateInvoiceModalProps {
+interface EditInvoiceModalProps {
+  invoiceId: string | null;
   open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onInvoiceCreated: (id?: string) => void;
+  onOpenChange: (v: boolean) => void;
+  onUpdated?: () => void;
 }
 
-export default function CreateInvoiceModal({
+export default function EditInvoiceModal({
+  invoiceId,
   open,
   onOpenChange,
-  onInvoiceCreated,
-}: CreateInvoiceModalProps) {
+  onUpdated,
+}: EditInvoiceModalProps) {
   const [loading, setLoading] = useState(false);
 
-  // Line items
-  const [lineItems, setLineItems] = useState([
-    { id: uuidv4(), serviceType: "", description: "", quantity: 1, rate: 0, taxRate: 0 },
-  ]);
-
-  // Customer list
   const [customers, setCustomers] = useState<any[]>([]);
-  const [customersLoading, setCustomersLoading] = useState(false);
-
-  // Service types
   const [serviceTypes, setServiceTypes] = useState<any[]>([]);
-  const [serviceLoading, setServiceLoading] = useState(false);
 
-  // ---------------- FETCH CUSTOMERS ----------------
+  const form = useForm<InvoiceFormValues>({
+    resolver: zodResolver(invoiceSchema),
+    defaultValues: {
+      invoiceNumber: "",
+      invoiceDate: new Date(),
+      dueDate: new Date(),
+      customerId: "",
+      referenceNumber: "",
+      notes: "",
+      lineItems: [
+        {
+          id: uuidv4(),
+          serviceType: "",
+          description: "",
+          quantity: 1,
+          rate: 0,
+          taxRate: 0,
+        },
+      ],
+    },
+  });
+
+  const ensureLineIds = (lines: any[]) =>
+    lines.map((li) => ({ id: li.id ?? uuidv4(), ...li }));
+
+  // ----------------------------------------------------
+  // LOAD REQUIRED LISTS
+  // ----------------------------------------------------
   useEffect(() => {
     const loadCustomers = async () => {
-      setCustomersLoading(true);
       try {
-        const res = await apiFetch("/api/v1/api/v1/customers");
+        const res = await apiFetch(`/api/v1/api/v1/customers`);
         const json = await res.json();
-        setCustomers(Array.isArray(json) ? json : json.data || []);
-      } catch (err) {
-        console.error("Customer API error:", err);
-      } finally {
-        setCustomersLoading(false);
+        setCustomers(json.data ?? json);
+      } catch {
+        toast.error("Failed to load customers");
+      }
+    };
+
+    const loadServiceTypes = async () => {
+      try {
+        const res = await apiFetch(`/api/v1/api/v1/service-types`);
+        const json = await res.json();
+        setServiceTypes(json.data ?? json);
+      } catch {
+        toast.error("Failed to load service types");
       }
     };
 
     loadCustomers();
-  }, []);
-
-  // ---------------- FETCH SERVICE TYPES ----------------
-  useEffect(() => {
-    const loadServiceTypes = async () => {
-      setServiceLoading(true);
-      try {
-        const res = await apiFetch("/api/v1/api/v1/service-types");
-        const json = await res.json();
-        setServiceTypes(Array.isArray(json) ? json : json.data || []);
-      } catch (err) {
-        console.error("Service API error:", err);
-      } finally {
-        setServiceLoading(false);
-      }
-    };
-
     loadServiceTypes();
   }, []);
 
-  // ---------------- FORM SETUP ----------------
-  const form = useForm<InvoiceFormValues>({
-    resolver: zodResolver(invoiceSchema),
-    defaultValues: {
-      invoiceNumber: `INV-${new Date().getFullYear()}-${String(
-        Math.floor(Math.random() * 1000)
-      ).padStart(3, "0")}`,
-      invoiceDate: new Date(),
-      dueDate: new Date(Date.now() + 30 * 86400000),
-      referenceNumber: "",
-      notes: "",
-      customerId: "",
-      lineItems,
-    },
-  });
+  // ----------------------------------------------------
+  // LOAD INVOICE DATA WHEN EDITING
+  // ----------------------------------------------------
+  useEffect(() => {
+    if (!open || !invoiceId) return;
+
+    const loadInvoice = async () => {
+      setLoading(true);
+      try {
+        const res = await apiFetch(`/api/v1/api/v1/invoices/${invoiceId}`);
+        const json = await res.json();
+
+        const invoice = json.data ?? json;
+
+        form.reset({
+          invoiceNumber: invoice.invoiceNumber,
+          invoiceDate: new Date(invoice.invoiceDate),
+          dueDate: new Date(invoice.dueDate),
+          customerId: invoice.customerId,
+          referenceNumber: invoice.referenceNumber,
+          notes: invoice.notes,
+          lineItems: ensureLineIds(invoice.lineItems ?? []),
+        });
+      } catch {
+        toast.error("Failed to load invoice");
+      }
+      setLoading(false);
+    };
+
+    loadInvoice();
+  }, [open, invoiceId]);
+
+  // ----------------------------------------------------
+  // LINE ITEMS
+  // ----------------------------------------------------
+  const [lineItems, setLineItems] = useState<any[]>([]);
+
+  useEffect(() => {
+    const sub = form.watch((val) => setLineItems(val.lineItems ?? []));
+    setLineItems(form.getValues("lineItems") ?? []);
+    return () => sub.unsubscribe();
+  }, [form]);
 
   const syncLineItems = (updated: any[]) => {
     setLineItems(updated);
@@ -147,17 +181,28 @@ export default function CreateInvoiceModal({
   const addLine = () =>
     syncLineItems([
       ...lineItems,
-      { id: uuidv4(), serviceType: "", description: "", quantity: 1, rate: 0, taxRate: 0 },
+      {
+        id: uuidv4(),
+        serviceType: "",
+        description: "",
+        quantity: 1,
+        rate: 0,
+        taxRate: 0,
+      },
     ]);
 
   const removeLine = (id: string) => {
-    if (lineItems.length === 1) return toast.error("At least one line item required");
-    syncLineItems(lineItems.filter((item) => item.id !== id));
+    if (lineItems.length <= 1)
+      return toast.error("At least one line item required");
+
+    syncLineItems(lineItems.filter((li) => li.id !== id));
   };
 
   const updateLine = (id: string, field: string, value: any) => {
     syncLineItems(
-      lineItems.map((li) => (li.id === id ? { ...li, [field]: value } : li))
+      lineItems.map((li) =>
+        li.id === id ? { ...li, [field]: value } : li
+      )
     );
   };
 
@@ -167,80 +212,91 @@ export default function CreateInvoiceModal({
     return base + tax;
   };
 
-  const subtotal = lineItems.reduce((sum, li) => sum + li.quantity * li.rate, 0);
+  const subtotal = lineItems.reduce(
+    (s, li) => s + li.quantity * li.rate,
+    0
+  );
 
-  const toDateString = (d: Date | string) =>
+  const toDateString = (d: any) =>
     new Date(d).toISOString().slice(0, 10);
 
   const buildPayload = (data: InvoiceFormValues) => ({
+    invoiceNumber: data.invoiceNumber,
+    invoiceDate: toDateString(data.invoiceDate),
+    dueDate: toDateString(data.dueDate),
+    customerId: data.customerId,
+    referenceNumber: data.referenceNumber,
+    notes: data.notes,
+    lineItems: data.lineItems.map((li) => ({
+      id: li.id,
+      serviceType: li.serviceType,
+      description: li.description,
+      quantity: li.quantity,
+      rate: li.rate,
+      taxRate: li.taxRate,
+    })),
+  });
+
+  // ----------------------------------------------------
+  // UPDATE INVOICE
+  // ----------------------------------------------------
+ const onSubmit = async (data: InvoiceFormValues) => {
+  if (!invoiceId) return toast.error("No invoice selected");
+
+  const payload = {
     invoiceNumber: data.invoiceNumber,
     invoiceDate: toDateString(data.invoiceDate),
     customerId: data.customerId,
     dueDate: toDateString(data.dueDate),
     referenceNumber: data.referenceNumber,
     notes: data.notes,
-    lineItems: lineItems.map((li) => ({
+    lineItems: data.lineItems.map((li) => ({
       serviceType: li.serviceType,
       description: li.description,
       quantity: Number(li.quantity),
       rate: Number(li.rate),
       taxRate: Number(li.taxRate),
     })),
-  });
-
-  // ---------------- SUBMIT ----------------
-  const onSubmit = async (data: InvoiceFormValues) => {
-    setLoading(true);
-
-    try {
-      const res = await apiFetch("/api/v1/api/v1/invoices", {
-        method: "POST",
-        body: JSON.stringify(buildPayload(data)),
-      });
-
-      if (!res.ok) {
-        const msg = await res.text();
-        toast.error("Invoice creation failed: " + msg);
-        return;
-      }
-
-      // Read created invoice JSON
-      const created = await res.json();
-
-      // -------------------------------------------------------
-      // ✅ STORE CREATED INVOICE ID IN LOCAL STORAGE
-      // -------------------------------------------------------
-      if (created?.id) {
-        localStorage.setItem("last_created_invoice_id", created.id);
-        console.log("Invoice created ID:", created.id);
-      }
-
-      toast.success("Invoice created successfully!");
-
-      // Send ID to parent
-      onInvoiceCreated(created?.id);
-
-      onOpenChange(false);
-    } catch (err) {
-      toast.error("Network error");
-    } finally {
-      setLoading(false);
-    }
   };
 
-  // ----------------------------------------------------
+  setLoading(true);
 
+  try {
+    const resp = await apiFetch(`/api/v1/api/v1/invoices/${invoiceId}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+
+    if (!resp.ok) {
+      toast.error("Update failed: " + (await resp.text()));
+      return;
+    }
+
+    toast.success("Invoice updated successfully");
+    onOpenChange(false);
+    onUpdated?.();
+  } catch (err) {
+    toast.error("Network error");
+  } finally {
+    setLoading(false);
+  }
+};
+
+
+  // ----------------------------------------------------
+  // UI
+  // ----------------------------------------------------
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Create New Invoice</DialogTitle>
-          <DialogDescription>Fill all required fields to continue.</DialogDescription>
+          <DialogTitle>Edit Invoice</DialogTitle>
         </DialogHeader>
 
         <Form {...form}>
-          <form className="space-y-6" onSubmit={form.handleSubmit(onSubmit)}>
-            {/* CUSTOMER DROPDOWN */}
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+
+            {/* CUSTOMER */}
             <FormField
               control={form.control}
               name="customerId"
@@ -252,24 +308,15 @@ export default function CreateInvoiceModal({
                       <SelectTrigger>
                         <SelectValue placeholder="Select customer" />
                       </SelectTrigger>
-
                       <SelectContent>
-                        {customersLoading && (
-                          <SelectItem disabled value="loading">
-                            Loading...
+                        {customers.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.name}
                           </SelectItem>
-                        )}
-
-                        {!customersLoading &&
-                          customers.map((c) => (
-                            <SelectItem key={c.id} value={c.id}>
-                              {c.name}
-                            </SelectItem>
-                          ))}
+                        ))}
                       </SelectContent>
                     </Select>
                   </FormControl>
-                  <FormMessage />
                 </FormItem>
               )}
             />
@@ -282,7 +329,7 @@ export default function CreateInvoiceModal({
                 <FormItem>
                   <FormLabel>Invoice Number</FormLabel>
                   <FormControl>
-                    <Input {...field} readOnly />
+                    <Input {...field} />
                   </FormControl>
                 </FormItem>
               )}
@@ -329,7 +376,7 @@ export default function CreateInvoiceModal({
               />
             </div>
 
-            {/* REFERENCE NUMBER */}
+            {/* REFERENCE */}
             <FormField
               control={form.control}
               name="referenceNumber"
@@ -337,14 +384,13 @@ export default function CreateInvoiceModal({
                 <FormItem>
                   <FormLabel>Reference Number</FormLabel>
                   <FormControl>
-                    <Input {...field} placeholder="Reference number" />
+                    <Input {...field} />
                   </FormControl>
-                  <FormMessage />
                 </FormItem>
               )}
             />
 
-            {/* LINE ITEMS TABLE */}
+            {/* LINE ITEMS */}
             <div className="border rounded">
               <table className="w-full text-sm">
                 <thead>
@@ -355,7 +401,7 @@ export default function CreateInvoiceModal({
                     <th className="p-2 text-right">Rate</th>
                     <th className="p-2 text-right">Tax %</th>
                     <th className="p-2 text-right">Amount</th>
-                    <th />
+                    <th></th>
                   </tr>
                 </thead>
 
@@ -365,26 +411,19 @@ export default function CreateInvoiceModal({
                       <td className="p-2">
                         <Select
                           value={li.serviceType}
-                          onValueChange={(value) =>
-                            updateLine(li.id, "serviceType", value)
+                          onValueChange={(v) =>
+                            updateLine(li.id, "serviceType", v)
                           }
                         >
                           <SelectTrigger className="h-8">
-                            <SelectValue placeholder="Select service" />
+                            <SelectValue placeholder="Select" />
                           </SelectTrigger>
                           <SelectContent>
-                            {serviceLoading && (
-                              <SelectItem disabled value="loading">
-                                Loading...
+                            {serviceTypes.map((s) => (
+                              <SelectItem key={s.id} value={s.id}>
+                                {s.name}
                               </SelectItem>
-                            )}
-
-                            {!serviceLoading &&
-                              serviceTypes.map((s) => (
-                                <SelectItem key={s.id} value={s.id}>
-                                  {s.name}
-                                </SelectItem>
-                              ))}
+                            ))}
                           </SelectContent>
                         </Select>
                       </td>
@@ -394,7 +433,11 @@ export default function CreateInvoiceModal({
                           className="h-8"
                           value={li.description}
                           onChange={(e) =>
-                            updateLine(li.id, "description", e.target.value)
+                            updateLine(
+                              li.id,
+                              "description",
+                              e.target.value
+                            )
                           }
                         />
                       </td>
@@ -405,7 +448,11 @@ export default function CreateInvoiceModal({
                           type="number"
                           value={li.quantity}
                           onChange={(e) =>
-                            updateLine(li.id, "quantity", Number(e.target.value))
+                            updateLine(
+                              li.id,
+                              "quantity",
+                              Number(e.target.value)
+                            )
                           }
                         />
                       </td>
@@ -416,7 +463,11 @@ export default function CreateInvoiceModal({
                           type="number"
                           value={li.rate}
                           onChange={(e) =>
-                            updateLine(li.id, "rate", Number(e.target.value))
+                            updateLine(
+                              li.id,
+                              "rate",
+                              Number(e.target.value)
+                            )
                           }
                         />
                       </td>
@@ -427,7 +478,11 @@ export default function CreateInvoiceModal({
                           type="number"
                           value={li.taxRate}
                           onChange={(e) =>
-                            updateLine(li.id, "taxRate", Number(e.target.value))
+                            updateLine(
+                              li.id,
+                              "taxRate",
+                              Number(e.target.value)
+                            )
                           }
                         />
                       </td>
@@ -468,9 +523,8 @@ export default function CreateInvoiceModal({
                 <FormItem>
                   <FormLabel>Notes</FormLabel>
                   <FormControl>
-                    <Textarea {...field} placeholder="Invoice notes" />
+                    <Textarea {...field} />
                   </FormControl>
-                  <FormMessage />
                 </FormItem>
               )}
             />
@@ -482,14 +536,14 @@ export default function CreateInvoiceModal({
 
             <DialogFooter>
               <Button type="submit" disabled={loading}>
-                {loading ? "Creating..." : "Create Invoice"}
+                {loading ? "Saving..." : "Save Changes"}
               </Button>
-
               <Button
+                type="button"
                 variant="secondary"
-                onClick={() => window.print()}
+                onClick={() => onOpenChange(false)}
               >
-                <Printer className="h-4 w-4 mr-2" /> Print
+                Cancel
               </Button>
             </DialogFooter>
           </form>
