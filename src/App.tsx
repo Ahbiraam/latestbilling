@@ -8,7 +8,7 @@ import CompanyPage from "@/pages/company";
 import GstPage from "@/pages/gst";
 import ServiceTypesPage from "@/pages/service-types";
 import CustomersPage from "@/pages/customers";
-import CreateCustomerPage from "@/pages/customers/Create";   // ✔ CORRECT
+import CreateCustomerPage from "@/pages/customers/create";   // ✔ CORRECT
 import BillingPage from "@/pages/billing";
 import CreateInvoicePage from "@/pages/billing/create";
 import ReceiptsPage from "@/pages/receipts";
