@@ -1,29 +1,45 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { FileMinus } from "lucide-react";
 import { DataTable } from "@/components/credit-notes/data-table";
 import { columns } from "@/components/credit-notes/columns";
 import { CreateCreditNoteModal } from "@/components/credit-notes/create-credit-note-modal";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 import { apiFetch } from "@/lib/api";
+import { toast } from "sonner";
 
 export default function CreditNotesPage() {
   const [creditNotes, setCreditNotes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
+  // 🔥 FIXED: Proper API call with json() parsing
   const fetchCreditNotes = async () => {
     try {
       setLoading(true);
 
-      const response = await apiFetch("/api/v1/api/v1/credit-notes", {
-        method: "GET",
-      });
+      const res = await apiFetch("/api/v1/api/v1/credit-notes");
+      const json = await res.json();
 
-      setCreditNotes(response?.data || response || []);
+      if (!res.ok) {
+        console.error("Failed to load credit notes:", json?.detail);
+        toast.error(json?.detail || "Failed to load credit notes");
+        return;
+      }
+
+      console.log("CREDIT NOTES LOADED:", json.data);
+
+      setCreditNotes(json.data || []);
     } catch (error) {
       console.error("Failed to load credit notes:", error);
+      toast.error("Unexpected error loading credit notes");
     } finally {
       setLoading(false);
     }
@@ -33,18 +49,24 @@ export default function CreditNotesPage() {
     fetchCreditNotes();
   }, []);
 
+  // When new credit note is created → update table
   const handleCreditNoteCreated = async (createdNote) => {
     if (createdNote) {
-      setCreditNotes((prev) => [...prev, createdNote]); // instant UI update
+      setCreditNotes((prev) => [...prev, createdNote]);
     }
-    fetchCreditNotes(); // ensure full refresh
+    fetchCreditNotes(); // full refresh
   };
 
   return (
     <ErrorBoundary
-      fallback={<div className="container py-10">Something went wrong loading the Credit Notes page</div>}
+      fallback={
+        <div className="container py-10">
+          Something went wrong loading the Credit Notes page
+        </div>
+      }
     >
       <div className="container py-10">
+        {/* HEADER */}
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-3xl font-bold tracking-tight">Credit Notes</h1>
 
@@ -54,6 +76,7 @@ export default function CreditNotesPage() {
           </Button>
         </div>
 
+        {/* TABLE CARD */}
         <Card>
           <CardHeader>
             <CardTitle>Credit Notes</CardTitle>
@@ -71,6 +94,7 @@ export default function CreditNotesPage() {
           </CardContent>
         </Card>
 
+        {/* CREATE MODAL */}
         <CreateCreditNoteModal
           open={isCreateModalOpen}
           onOpenChange={setIsCreateModalOpen}

@@ -9,6 +9,7 @@ import {
   ColumnFiltersState,
   getFilteredRowModel,
 } from "@tanstack/react-table";
+
 import {
   Table,
   TableBody,
@@ -17,6 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useState } from "react";
@@ -50,16 +52,24 @@ export function DataTable<TData, TValue>({
 
   return (
     <div>
+      {/* 🔍 FIXED FILTER INPUT */}
       <div className="flex items-center py-4">
         <Input
           placeholder="Filter credit notes..."
-          value={(table.getColumn("creditNoteId")?.getFilterValue() as string) ?? ""}
+          value={
+            (table.getColumn("creditNoteNumber")?.getFilterValue() as string) ??
+            ""
+          }
           onChange={(event) =>
-            table.getColumn("creditNoteId")?.setFilterValue(event.target.value)
+            table
+              .getColumn("creditNoteNumber")
+              ?.setFilterValue(event.target.value)
           }
           className="max-w-sm"
         />
       </div>
+
+      {/* TABLE */}
       <div className="rounded-md border">
         <Table>
           <TableHeader>
@@ -78,6 +88,7 @@ export function DataTable<TData, TValue>({
               </TableRow>
             ))}
           </TableHeader>
+
           <TableBody>
             {table.getRowModel().rows?.length ? (
               table.getRowModel().rows.map((row) => (
@@ -87,7 +98,10 @@ export function DataTable<TData, TValue>({
                 >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id}>
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      {flexRender(
+                        cell.column.columnDef.cell,
+                        cell.getContext()
+                      )}
                     </TableCell>
                   ))}
                 </TableRow>
@@ -102,6 +116,8 @@ export function DataTable<TData, TValue>({
           </TableBody>
         </Table>
       </div>
+
+      {/* PAGINATION */}
       <div className="flex items-center justify-end space-x-2 py-4">
         <Button
           variant="outline"
@@ -111,6 +127,7 @@ export function DataTable<TData, TValue>({
         >
           Previous
         </Button>
+
         <Button
           variant="outline"
           size="sm"
@@ -122,4 +139,4 @@ export function DataTable<TData, TValue>({
       </div>
     </div>
   );
-} 
+}

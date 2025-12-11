@@ -2,41 +2,47 @@ import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
+
 import {
   Dialog,
   DialogContent,
   DialogHeader,
-  DialogTitle,
   DialogFooter,
+  DialogTitle,
 } from "@/components/ui/dialog";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+
 import {
   Form,
-  FormControl,
   FormField,
   FormItem,
   FormLabel,
+  FormControl,
 } from "@/components/ui/form";
+
 import {
   Select,
+  SelectTrigger,
   SelectContent,
   SelectItem,
-  SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+
 import {
   Popover,
-  PopoverContent,
   PopoverTrigger,
+  PopoverContent,
 } from "@/components/ui/popover";
+
 import { Calendar } from "@/components/ui/calendar";
-import { Textarea } from "@/components/ui/textarea";
 import { CalendarIcon } from "lucide-react";
 import { format } from "date-fns";
-import { toast } from "sonner";
 
-const BASE_URL = "https://rms-billing-backend.onrender.com";
+import { toast } from "sonner";
+import { apiFetch } from "@/lib/api";
 
 /* ----------------------- VALIDATION ----------------------- */
 
@@ -44,7 +50,7 @@ const creditNoteSchema = z.object({
   creditNoteId: z.string().min(1),
   creditNoteDate: z.date(),
   customerId: z.string().min(1),
-  invoiceId: z.string().min(1), // internal ID
+  invoiceId: z.string().min(1),
   reason: z.string().min(1),
   amount: z.number().min(0),
   gstRate: z.number().min(0),
@@ -61,6 +67,10 @@ function generateCreditNoteId() {
   return `CN-${year}-${rn}`;
 }
 
+/* -------------------------------------------------------- */
+/*                     MAIN COMPONENT                       */
+/* -------------------------------------------------------- */
+
 export function CreateCreditNoteModal({
   open,
   onOpenChange,
@@ -69,8 +79,6 @@ export function CreateCreditNoteModal({
   const [customers, setCustomers] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
-
-  const token = localStorage.getItem("token");
 
   const form = useForm<CreditNoteFormValues>({
     resolver: zodResolver(creditNoteSchema),
@@ -89,50 +97,47 @@ export function CreateCreditNoteModal({
   /* ----------------------- LOAD CUSTOMERS ----------------------- */
 
   useEffect(() => {
+    if (!open) return;
+
     async function loadCustomers() {
       try {
-        const res = await fetch(`${BASE_URL}/api/v1/api/v1/customers`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-
+        const res = await apiFetch("/api/v1/api/v1/customers");
         const data = await res.json();
-        setCustomers(data?.data || []);
-      } catch (err) {
+        setCustomers(data?.data || data?.root || []);
+      } catch {
         toast.error("Failed to load customers");
       }
     }
-    loadCustomers();
-  }, []);
 
-  /* ----------------------- LOAD INVOICES AFTER CUSTOMER SELECT ----------------------- */
+    loadCustomers();
+  }, [open]);
+
+  /* ----------------------- LOAD INVOICES ----------------------- */
 
   const handleCustomerChange = async (customerId: string) => {
     form.setValue("customerId", customerId);
     form.setValue("invoiceId", "");
+
     setInvoices([]);
     setSelectedInvoice(null);
 
     try {
-      const res = await fetch(
-        `${BASE_URL}/api/v1/api/v1/invoices?customerId=${customerId}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
+      const res = await apiFetch(
+        `/api/v1/api/v1/invoices?customerId=${customerId}`
       );
-
       const json = await res.json();
-      setInvoices(json?.data || []);
-    } catch (err) {
+      setInvoices(json?.data || json?.root || []);
+    } catch {
       toast.error("Failed to load invoices");
     }
   };
 
-  /* ----------------------- WHEN INVOICE SELECTED ----------------------- */
+  /* ----------------------- INVOICE SELECT ----------------------- */
 
   const handleInvoiceChange = (invoiceId: string) => {
     form.setValue("invoiceId", invoiceId);
 
-    const invoice = invoices.find((i) => i.id === invoiceId); // internal ID
+    const invoice = invoices.find((i) => i.id === invoiceId);
     setSelectedInvoice(invoice);
 
     if (invoice) {
@@ -141,7 +146,7 @@ export function CreateCreditNoteModal({
     }
   };
 
-  /* ----------------------- FINAL SUBMIT ----------------------- */
+  /* ----------------------- SUBMIT ----------------------- */
 
   const onSubmit = async (formData: CreditNoteFormValues) => {
     try {
@@ -152,7 +157,7 @@ export function CreateCreditNoteModal({
         creditNoteId: formData.creditNoteId,
         creditNoteDate: formData.creditNoteDate.toISOString().split("T")[0],
         customerId: formData.customerId,
-        invoiceId: formData.invoiceId, // INTERNAL ID (confirmed)
+        invoiceId: formData.invoiceId,
         reason: formData.reason,
         amount: formData.amount,
         gstRate: formData.gstRate,
@@ -162,28 +167,29 @@ export function CreateCreditNoteModal({
         status: "Issued",
       };
 
-      const res = await fetch(`${BASE_URL}/api/v1/api/v1/credit-notes`, {
+      const res = await apiFetch("/api/v1/api/v1/credit-notes", {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify(payload),
       });
 
-      const responseData = await res.json();
+      const json = await res.json();
 
-      if (!res.ok) {
-        toast.error(responseData?.detail || "Failed to create credit note");
+      /* ---------------- SUCCESS CHECK ---------------- */
+      if (res.ok) {
+        toast.success("Credit Note Created Successfully!");
+
+        console.log("✔ SUCCESS: Credit Note Created", json.data);
+
+        onCreditNoteCreated(json.data);
+        onOpenChange(false);
         return;
       }
 
-      toast.success("Credit Note created successfully");
+      /* ---------------- FAILURE ---------------- */
+      toast.error(json?.detail || "Create failed");
 
-      onCreditNoteCreated(responseData.data);
-      onOpenChange(false);
     } catch (err) {
-      toast.error("Create failed");
+      toast.error("Unexpected error");
       console.error("Create Error:", err);
     }
   };
@@ -192,15 +198,16 @@ export function CreateCreditNoteModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-xl shadow-xl">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto p-6 rounded-xl shadow-lg">
+
         <DialogHeader>
           <DialogTitle>Create Credit Note</DialogTitle>
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5 pb-10">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
 
-            {/* Credit Note ID */}
+            {/* CREDIT NOTE ID */}
             <FormField
               control={form.control}
               name="creditNoteId"
@@ -214,7 +221,7 @@ export function CreateCreditNoteModal({
               )}
             />
 
-            {/* Date */}
+            {/* DATE */}
             <FormField
               control={form.control}
               name="creditNoteDate"
@@ -225,22 +232,18 @@ export function CreateCreditNoteModal({
                     <PopoverTrigger asChild>
                       <Button variant="outline" className="w-full justify-between">
                         {format(field.value, "PPP")}
-                        <CalendarIcon className="h-4 w-4 opacity-50" />
+                        <CalendarIcon className="h-4 w-4 opacity-60" />
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent>
-                      <Calendar
-                        mode="single"
-                        selected={field.value}
-                        onSelect={field.onChange}
-                      />
+                      <Calendar selected={field.value} onSelect={field.onChange} />
                     </PopoverContent>
                   </Popover>
                 </FormItem>
               )}
             />
 
-            {/* Customer */}
+            {/* CUSTOMER SELECT */}
             <FormField
               control={form.control}
               name="customerId"
@@ -269,13 +272,14 @@ export function CreateCreditNoteModal({
               )}
             />
 
-            {/* Invoice */}
+            {/* INVOICE SELECT */}
             <FormField
               control={form.control}
               name="invoiceId"
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Invoice</FormLabel>
+
                   <Select
                     onValueChange={(v) => {
                       field.onChange(v);
@@ -297,15 +301,14 @@ export function CreateCreditNoteModal({
 
                   {selectedInvoice && (
                     <div className="text-sm text-muted-foreground mt-1">
-                      Invoice Total:{" "}
-                      <strong>{selectedInvoice.total}</strong>
+                      Invoice Total: <strong>{selectedInvoice.total}</strong>
                     </div>
                   )}
                 </FormItem>
               )}
             />
 
-            {/* Reason */}
+            {/* REASON */}
             <FormField
               control={form.control}
               name="reason"
@@ -313,13 +316,13 @@ export function CreateCreditNoteModal({
                 <FormItem>
                   <FormLabel>Reason</FormLabel>
                   <FormControl>
-                    <Input {...field} placeholder="Enter reason" />
+                    <Input {...field} placeholder="Reason for credit note" />
                   </FormControl>
                 </FormItem>
               )}
             />
 
-            {/* Amount */}
+            {/* AMOUNT */}
             <FormField
               control={form.control}
               name="amount"
@@ -329,15 +332,15 @@ export function CreateCreditNoteModal({
                   <FormControl>
                     <Input
                       type="number"
-                      onChange={(e) => field.onChange(Number(e.target.value))}
                       value={field.value}
+                      onChange={(e) => field.onChange(Number(e.target.value))}
                     />
                   </FormControl>
                 </FormItem>
               )}
             />
 
-            {/* GST Rate */}
+            {/* GST RATE */}
             <FormField
               control={form.control}
               name="gstRate"
@@ -347,32 +350,32 @@ export function CreateCreditNoteModal({
                   <FormControl>
                     <Input
                       type="number"
-                      onChange={(e) => field.onChange(Number(e.target.value))}
                       value={field.value}
+                      onChange={(e) => field.onChange(Number(e.target.value))}
                     />
                   </FormControl>
                 </FormItem>
               )}
             />
 
-            {/* Auto Calculations */}
+            {/* AUTO CALCULATIONS */}
             <div className="text-sm space-y-1">
               <div>
                 GST Amount:{" "}
                 <strong>
-                  {(form.watch("amount") * form.watch("gstRate")) / 100 || 0}
+                  {(form.watch("amount") * form.watch("gstRate")) / 100}
                 </strong>
               </div>
               <div>
                 Total Credit:{" "}
                 <strong>
                   {form.watch("amount") +
-                    (form.watch("amount") * form.watch("gstRate")) / 100 || 0}
+                    (form.watch("amount") * form.watch("gstRate")) / 100}
                 </strong>
               </div>
             </div>
 
-            {/* Notes */}
+            {/* NOTES */}
             <FormField
               control={form.control}
               name="notes"
@@ -398,3 +401,5 @@ export function CreateCreditNoteModal({
     </Dialog>
   );
 }
+
+export default CreateCreditNoteModal;

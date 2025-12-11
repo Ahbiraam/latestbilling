@@ -35,11 +35,6 @@ import { Switch } from "@/components/ui/switch";
 import { Search, Plus, Pencil, Trash2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
-/**
- * Screenshot (Swagger) reference:
- * /mnt/data/Screenshot 2025-11-20 165024.png
- */
-
 /** -------------------------
  * Types
  * ------------------------- */
@@ -57,7 +52,7 @@ type ServiceType = {
 type CustomerType = {
   id: string;
   companyId?: string;
-  code: string;
+  code?: string;
   name: string;
   description?: string;
   paymentTerms?: number;
@@ -101,10 +96,8 @@ const serviceTypeSchema = z.object({
 });
 
 const customerTypeSchema = z.object({
-  code: z.string().min(2),
   name: z.string().min(2),
   description: z.string().optional(),
-  paymentTerms: z.coerce.number().min(0).optional(),
   isActive: z.boolean().optional(),
 });
 
@@ -125,7 +118,9 @@ export default function ServiceTypesPage(): JSX.Element {
 
   const [serviceTypes, setServiceTypes] = useState<ServiceType[]>([]);
   const [customerTypes, setCustomerTypes] = useState<CustomerType[]>([]);
-  const [accountsManagers, setAccountsManagers] = useState<AccountsManager[]>([]);
+  const [accountsManagers, setAccountsManagers] = useState<AccountsManager[]>(
+    []
+  );
 
   // UI state
   const [searchQuery, setSearchQuery] = useState("");
@@ -137,9 +132,9 @@ export default function ServiceTypesPage(): JSX.Element {
   // Dialog state
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [dialogMode, setDialogMode] = useState<"service" | "customer" | "accounts">(
-    "service"
-  );
+  const [dialogMode, setDialogMode] = useState<
+    "service" | "customer" | "accounts"
+  >("service");
 
   // forms
   const serviceTypeForm = useForm<z.infer<typeof serviceTypeSchema>>({
@@ -156,10 +151,8 @@ export default function ServiceTypesPage(): JSX.Element {
   const customerTypeForm = useForm<z.infer<typeof customerTypeSchema>>({
     resolver: zodResolver(customerTypeSchema),
     defaultValues: {
-      code: "",
       name: "",
       description: "",
-      paymentTerms: 30,
       isActive: true,
     },
   });
@@ -281,44 +274,51 @@ export default function ServiceTypesPage(): JSX.Element {
    * Endpoint (swagger shows):
    * /api/v1/account-managers/api/v1/account-managers
    * ------------------------- */
-useEffect(() => {
-  async function loadAccountManagers() {
-    try {
-      const res = await apiFetch("/api/v1/account-managers/api/v1/account-managers");
+  useEffect(() => {
+    async function loadAccountManagers() {
+      setIsLoadingAccounts(true);
+      try {
+        const res = await apiFetch(
+          "/api/v1/account-managers/api/v1/account-managers"
+        );
 
-      const body = await res.clone().json().catch(() => null);
-      console.log("🔥 ACCOUNT MANAGER RAW RESPONSE:", body);
+        const body = await res.clone().json().catch(() => null);
+        console.log("🔥 ACCOUNT MANAGER RAW RESPONSE:", body);
 
-      // FIX: backend returns { root: [...] }
-      const list: any[] = Array.isArray(body?.root)
-        ? body.root
-        : [];
+        // FIX: backend returns { root: [...] }
+        const list: any[] = Array.isArray(body?.root) ? body.root : [];
 
-      const normalized = list.map((it: any) => ({
-        id: it.id ?? it._id,
-        name: it.name,
-        email: it.email,
-        phone: it.phone,
-        isActive: it.isActive ?? true,
-        companyId: it.companyId ?? currentUser.companyId,
-      }));
+        const normalized = list.map((it: any) => ({
+          id: it.id ?? it._id,
+          name: it.name,
+          email: it.email,
+          phone: it.phone,
+          isActive: it.isActive ?? true,
+          companyId: it.companyId ?? currentUser.companyId,
+        }));
 
-      setAccountsManagers(normalized);
-    } catch (err) {
-      console.error("Accounts GET error:", err);
-      toast.error("Failed to load account managers");
+        setAccountsManagers(normalized);
+      } catch (err) {
+        console.error("Accounts GET error:", err);
+        toast.error("Failed to load account managers");
+      } finally {
+        setIsLoadingAccounts(false);
+      }
     }
-  }
 
-  loadAccountManagers();
-}, []);
+    loadAccountManagers();
+  }, []);
 
   // visible lists (filter by company if item belongs to company)
   const visibleServiceTypes = serviceTypes.filter(
     (s) => !s.companyId || s.companyId === companyId
   );
-  const visibleCustomerTypes = customerTypes.filter((c) => !c.companyId || c.companyId === companyId);
-  const visibleAccounts = accountsManagers.filter((a) => !a.companyId || a.companyId === companyId);
+  const visibleCustomerTypes = customerTypes.filter(
+    (c) => !c.companyId || c.companyId === companyId
+  );
+  const visibleAccounts = accountsManagers.filter(
+    (a) => !a.companyId || a.companyId === companyId
+  );
 
   const filteredServiceTypes = visibleServiceTypes.filter(
     (t) =>
@@ -328,10 +328,12 @@ useEffect(() => {
   const filteredCustomerTypes = visibleCustomerTypes.filter(
     (t) =>
       t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      t.code.toLowerCase().includes(searchQuery.toLowerCase())
+      (t.code ?? "").toLowerCase().includes(searchQuery.toLowerCase())
   );
   const filteredAccounts = visibleAccounts.filter((m) =>
-    `${m.name} ${m.email} ${m.phone ?? ""}`.toLowerCase().includes(searchQuery.toLowerCase())
+    `${m.name} ${m.email} ${m.phone ?? ""}`
+      .toLowerCase()
+      .includes(searchQuery.toLowerCase())
   );
 
   // open create dialog
@@ -349,7 +351,10 @@ useEffect(() => {
   }
 
   // open edit dialog (kept for service/customer — accounts editing is not supported in backend)
-  function openEditDialog(mode: "service" | "customer" | "accounts", id: string) {
+  function openEditDialog(
+    mode: "service" | "customer" | "accounts",
+    id: string
+  ) {
     if (!currentUser.isAdmin) {
       toast.error("Only admins can perform this action.");
       return;
@@ -370,11 +375,10 @@ useEffect(() => {
     } else if (mode === "customer") {
       const rec = customerTypes.find((c) => c.id === id);
       if (!rec) return toast.error("Customer type not found");
+      // DO NOT show code/paymentTerms in UI — keep them internally
       customerTypeForm.reset({
-        code: rec.code,
         name: rec.name,
         description: rec.description,
-        paymentTerms: rec.paymentTerms ?? 0,
         isActive: rec.isActive ?? true,
       });
     } else {
@@ -406,28 +410,32 @@ useEffect(() => {
         name: values.name,
         description: values.description ?? "",
         taxRate: values.taxRate ?? 0,
-        isActive: typeof values.isActive === "boolean" ? values.isActive : true,
+        isActive:
+          typeof values.isActive === "boolean" ? values.isActive : true,
       };
 
       if (editingId) {
-        const res = await apiFetch(`/api/v1/api/v1/service-types/${editingId}`, {
-          method: "PUT",
-          body: JSON.stringify(payload),
-        });
+        const res = await apiFetch(
+          `/api/v1/api/v1/service-types/${editingId}`,
+          {
+            method: "PUT",
+            body: JSON.stringify(payload),
+          }
+        );
         if (!res.ok) {
           const body = await tryParseJson(res);
           throw new Error(body?.message || `Update failed (${res.status})`);
         }
         const updated = await res.json();
-        console.log("🔥 CUSTOMER UPDATE RESPONSE:", updated);
-        console.log("🔥 SERVICE UPDATE RESPONSE:", updated);
         const normalized = {
           id: updated.id ?? updated._id ?? editingId,
           ...payload,
           companyId: updated.companyId ?? currentUser.companyId,
         } as ServiceType;
 
-        setServiceTypes((prev) => prev.map((p) => (p.id === editingId ? normalized : p)));
+        setServiceTypes((prev) =>
+          prev.map((p) => (p.id === editingId ? normalized : p))
+        );
         toast.success("Service updated");
       } else {
         const res = await apiFetch(`/api/v1/api/v1/service-types`, {
@@ -439,8 +447,6 @@ useEffect(() => {
           throw new Error(body?.message || `Create failed (${res.status})`);
         }
         const created = await res.json();
-        console.log("🔥 CUSTOMER CREATE RESPONSE:", created);
-        console.log("🔥 SERVICE CREATE RESPONSE:", created);
         const normalized = {
           id: created.id ?? created._id ?? `s-${Date.now()}`,
           ...payload,
@@ -463,22 +469,28 @@ useEffect(() => {
 
   /** -------------------------
    * Create or Update customer type (POST / PUT)
+   * Backend still expects code & paymentTerms,
+   * but UI hides them. We auto-generate on create and preserve on edit.
    * ------------------------- */
   async function submitCustomerType(values: z.infer<typeof customerTypeSchema>) {
     if (!currentUser.isAdmin) return toast.error("Not authorized");
     setIsSubmitting(true);
 
     try {
+      // For edit, preserve existing code/paymentTerms from the loaded record.
+      const existing = editingId
+        ? customerTypes.find((c) => c.id === editingId)
+        : null;
+
       const payload = {
-        code: values.code,
+        code: existing?.code ?? `CLT-${Date.now()}`, // backend requires code
         name: values.name,
         description: values.description ?? "",
-        paymentTerms: values.paymentTerms ?? 0,
+        paymentTerms: existing?.paymentTerms ?? 30, // backend requires paymentTerms
         isActive: typeof values.isActive === "boolean" ? values.isActive : true,
       };
 
       if (editingId) {
-        // Update (PUT)
         const res = await apiFetch(`/api/v1/api/v1/client-types/${editingId}`, {
           method: "PUT",
           body: JSON.stringify(payload),
@@ -495,10 +507,11 @@ useEffect(() => {
           createdAt: updated.createdAt,
           updatedAt: updated.updatedAt,
         };
-        setCustomerTypes((prev) => prev.map((c) => (c.id === editingId ? normalized : c)));
+        setCustomerTypes((prev) =>
+          prev.map((c) => (c.id === editingId ? normalized : c))
+        );
         toast.success("Customer type updated");
       } else {
-        // Create (POST)
         const res = await apiFetch(`/api/v1/api/v1/client-types`, {
           method: "POST",
           body: JSON.stringify(payload),
@@ -508,7 +521,6 @@ useEffect(() => {
           throw new Error(body?.message || `Create failed (${res.status})`);
         }
         const created = await res.json();
-        console.log("🔥 SERVICE CREATE RESPONSE:", created);
         const normalized: CustomerType = {
           id: created.id ?? created._id ?? `ct-${Date.now()}`,
           ...payload,
@@ -580,7 +592,9 @@ useEffect(() => {
    * ------------------------- */
   async function toggleActiveService(id: string) {
     if (!currentUser.isAdmin) return toast.error("Not authorized");
-    setServiceTypes((prev) => prev.map((s) => (s.id === id ? { ...s, isActive: !s.isActive } : s)));
+    setServiceTypes((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, isActive: !s.isActive } : s))
+    );
     try {
       const res = await apiFetch(`/api/v1/api/v1/service-types/${id}/toggle`, {
         method: "PATCH",
@@ -604,17 +618,22 @@ useEffect(() => {
     } catch (err: any) {
       console.error(err);
       toast.error("Failed to update status");
-      setServiceTypes((prev) => prev.map((s) => (s.id === id ? { ...s, isActive: !(s.isActive ?? true) } : s)));
+      setServiceTypes((prev) =>
+        prev.map((s) =>
+          s.id === id ? { ...s, isActive: !(s.isActive ?? true) } : s
+        )
+      );
     }
   }
 
   /** -------------------------
    * Toggle active status for customer (PATCH fallback)
-   * (optional - some backends may not have toggle endpoint)
    * ------------------------- */
   async function toggleActiveCustomer(id: string) {
     if (!currentUser.isAdmin) return toast.error("Not authorized");
-    setCustomerTypes((prev) => prev.map((c) => (c.id === id ? { ...c, isActive: !c.isActive } : c)));
+    setCustomerTypes((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, isActive: !c.isActive } : c))
+    );
     try {
       const res = await apiFetch(`/api/v1/api/v1/client-types/${id}/toggle`, {
         method: "PATCH",
@@ -638,16 +657,20 @@ useEffect(() => {
     } catch (err: any) {
       console.error(err);
       toast.error("Failed to update status");
-      setCustomerTypes((prev) => prev.map((c) => (c.id === id ? { ...c, isActive: !(c.isActive ?? true) } : c)));
+      setCustomerTypes((prev) =>
+        prev.map((c) =>
+          c.id === id ? { ...c, isActive: !(c.isActive ?? true) } : c
+        )
+      );
     }
   }
 
   /** -------------------------
    * Create account manager (POST only)
-   * Endpoint (as provided by you):
-   * /api/v1/account-managers/api/v1/account-managers
    * ------------------------- */
-  async function submitAccountManagerCreate(values: z.infer<typeof accountsManagerSchema>) {
+  async function submitAccountManagerCreate(
+    values: z.infer<typeof accountsManagerSchema>
+  ) {
     if (!currentUser.isAdmin) return toast.error("Not authorized");
     setIsSubmitting(true);
 
@@ -656,14 +679,18 @@ useEffect(() => {
         name: values.name,
         email: values.email,
         phone: values.phone ?? "",
-        isActive: typeof values.isActive === "boolean" ? values.isActive : true,
+        isActive:
+          typeof values.isActive === "boolean" ? values.isActive : true,
         companyId, // attach companyId if backend expects it
       };
 
-      const res = await apiFetch("/api/v1/account-managers/api/v1/account-managers", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
+      const res = await apiFetch(
+        "/api/v1/account-managers/api/v1/account-managers",
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        }
+      );
 
       if (!res.ok) {
         const body = await tryParseJson(res);
@@ -671,13 +698,13 @@ useEffect(() => {
       }
 
       const created = await res.json();
-        console.log("🔥 SERVICE CREATE RESPONSE:", created);
       const normalized: AccountsManager = {
         id: created.id ?? created._id ?? `am-${Date.now()}`,
         name: created.name ?? payload.name,
         email: created.email ?? payload.email,
         phone: created.phone ?? payload.phone,
-        isActive: typeof created.isActive === "boolean" ? created.isActive : payload.isActive,
+        isActive:
+          typeof created.isActive === "boolean" ? created.isActive : payload.isActive,
         companyId: created.companyId ?? companyId,
       };
 
@@ -696,7 +723,9 @@ useEffect(() => {
   return (
     <div className="p-8">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold">Service / Customer Types & Accounts Managers</h1>
+        <h1 className="text-2xl font-bold">
+          Service / Customer Types & Accounts Managers
+        </h1>
         <p className="text-muted-foreground">
           Company: <strong>{companies.find((c) => c.id === companyId)?.name}</strong> —{" "}
           {currentUser.isAdmin ? "Admin" : "User"}
@@ -792,14 +821,15 @@ useEffect(() => {
 
         {/* Customer tab */}
         <TabsContent value="customer">
+          <div className="mb-2 text-sm text-muted-foreground">
+          </div>
+
           <div className="rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Code</TableHead>
-                  <TableHead>Name</TableHead>
+                  <TableHead>Customer Type</TableHead>
                   <TableHead>Description</TableHead>
-                  <TableHead>Payment Terms</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="w-[120px]">Actions</TableHead>
                 </TableRow>
@@ -807,17 +837,15 @@ useEffect(() => {
               <TableBody>
                 {isLoadingCustomers ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="p-6 text-center">
+                    <TableCell colSpan={4} className="p-6 text-center">
                       <Loader2 className="inline-block animate-spin" /> Loading...
                     </TableCell>
                   </TableRow>
                 ) : filteredCustomerTypes.length ? (
                   filteredCustomerTypes.map((t) => (
                     <TableRow key={t.id}>
-                      <TableCell className="font-medium">{t.code}</TableCell>
-                      <TableCell>{t.name}</TableCell>
+                      <TableCell className="font-medium">{t.name}</TableCell>
                       <TableCell>{t.description}</TableCell>
-                      <TableCell>{t.paymentTerms ?? "-"}</TableCell>
                       <TableCell>
                         <span
                           className={`inline-block rounded-full px-2 py-0.5 text-sm ${
@@ -842,7 +870,7 @@ useEffect(() => {
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center p-6 text-muted-foreground">
+                    <TableCell colSpan={4} className="text-center p-6 text-muted-foreground">
                       No customer types found.
                     </TableCell>
                   </TableRow>
@@ -885,8 +913,6 @@ useEffect(() => {
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          {/* Editing accounts is intentionally disabled (backend supports only create + get per your request).
-                              Keep a view-only Pencil that opens the dialog but saving will not perform PUT. */}
                           <Button variant="ghost" size="icon" onClick={() => openEditDialog("accounts", a.id)}>
                             <Pencil className="h-4 w-4" />
                           </Button>
@@ -913,11 +939,15 @@ useEffect(() => {
           <DialogHeader>
             <DialogTitle>
               {editingId ? "Edit" : "Create"}{" "}
-              {dialogMode === "service" ? "Service Type" : dialogMode === "customer" ? "Customer Type" : "Accounts Manager"}
+              {dialogMode === "service"
+                ? "Service Type"
+                : dialogMode === "customer"
+                ? "Customer Type"
+                : "Accounts Manager"}
             </DialogTitle>
             <DialogDescription>
               {dialogMode === "service" && "Service type belongs to current company only."}
-              {dialogMode === "customer" && "Customer type belongs to current company only."}
+              {dialogMode === "customer" && ""}
               {dialogMode === "accounts" && "Create new accounts manager (backend supports only create + get). Editing is view-only here."}
             </DialogDescription>
           </DialogHeader>
@@ -989,70 +1019,63 @@ useEffect(() => {
             </Form>
           )}
 
-          {/* Customer form - integrated with API */}
+          {/* Customer Type Form */}
           {dialogMode === "customer" && (
             <Form {...customerTypeForm}>
               <form onSubmit={customerTypeForm.handleSubmit(submitCustomerType)} className="space-y-4">
-                <FormField control={customerTypeForm.control} name="code" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Code</FormLabel>
-                    <FormControl>
-                      <Input {...field} placeholder="Code" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
+                {/* Customer Type Name */}
+                <FormField
+                  control={customerTypeForm.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Customer Type</FormLabel>
+                      <FormControl>
+                        <Input {...field} placeholder="Enter customer type" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-                <FormField control={customerTypeForm.control} name="name" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Name</FormLabel>
-                    <FormControl>
-                      <Input {...field} placeholder="Name" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
+                {/* Description */}
+                <FormField
+                  control={customerTypeForm.control}
+                  name="description"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Description</FormLabel>
+                      <FormControl>
+                        <Input {...field} placeholder="Description" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-                <FormField control={customerTypeForm.control} name="description" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Description</FormLabel>
-                    <FormControl>
-                      <Input {...field} placeholder="Description" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-
-                <FormField control={customerTypeForm.control} name="paymentTerms" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Payment Terms (days)</FormLabel>
-                    <FormControl>
-                      <Input
-                        {...field}
-                        type="number"
-                        onChange={(e) => field.onChange(Number(e.target.value))}
-                        placeholder="Payment terms"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-
-                <FormField control={customerTypeForm.control} name="isActive" render={({ field }) => (
-                  <FormItem className="flex items-center justify-between rounded-lg border p-4">
-                    <div>
+                {/* Active */}
+                <FormField
+                  control={customerTypeForm.control}
+                  name="isActive"
+                  render={({ field }) => (
+                    <FormItem className="flex items-center justify-between rounded-lg border p-4">
                       <FormLabel>Active</FormLabel>
-                    </div>
-                    <FormControl>
-                      <Switch checked={field.value} onCheckedChange={field.onChange} />
-                    </FormControl>
-                  </FormItem>
-                )} />
+                      <FormControl>
+                        <Switch checked={field.value} onCheckedChange={field.onChange} />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
 
                 <DialogFooter>
-                  <Button variant="outline" type="button" onClick={() => { setIsDialogOpen(false); setEditingId(null); }}>
+                  <Button
+                    variant="outline"
+                    type="button"
+                    onClick={() => { setIsDialogOpen(false); setEditingId(null); }}
+                  >
                     Cancel
                   </Button>
+
                   <Button type="submit" disabled={isSubmitting}>
                     {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     {editingId ? "Update" : "Create"}
@@ -1069,7 +1092,6 @@ useEffect(() => {
                 // Note: backend supports only create + get per your instruction
                 // If editingId is set, we treat dialog as view-only (no PUT)
                 if (editingId) {
-                  // editing not supported (backend is POST-only for accounts). Inform user.
                   toast.error("Editing accounts manager is not supported. Create only.");
                   return;
                 }

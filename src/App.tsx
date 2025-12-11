@@ -12,7 +12,7 @@ import CreateCustomerPage from "@/pages/customers/Create";   // ✔ CORRECT
 import BillingPage from "@/pages/billing";
 import CreateInvoicePage from "@/pages/billing/create";
 import ReceiptsPage from "@/pages/receipts";
-import CreditNotesPage from "@/pages/credit-notes";
+import CreditNotesPage from "@/components/credit-notes";
 import LoginPage from "@/pages/login";
 
 import { AuthProvider } from "@/context/AuthContext";

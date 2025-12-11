@@ -1,13 +1,13 @@
 // =====================
 // API BASE URL
 // =====================
-export const API_BASE_URL = "https://rms-billing-backend.onrender.com";
+export const API_BASE_URL = "https://rms-billing-backend-75cu.onrender.com";
 
 // =====================
-// DEV MODE (ENABLE DURING DEVELOPMENT ONLY)
+// DEV MODE
 // =====================
-const DEV_MODE = true; // ❗ turn OFF in production
-const DEV_TOKEN = "test-dev-token"; // any string works
+const DEV_MODE = true;
+const DEV_TOKEN = "test-dev-token";
 
 // =====================
 // MAIN FETCH WRAPPER
@@ -20,7 +20,6 @@ export async function apiFetch(
 
   let token = localStorage.getItem("token");
 
-  // Inject DEV TOKEN if no real token exists
   if (DEV_MODE && !token) {
     token = DEV_TOKEN;
   }

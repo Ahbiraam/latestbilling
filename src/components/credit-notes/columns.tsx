@@ -1,31 +1,28 @@
 import { ColumnDef } from "@tanstack/react-table";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { MoreHorizontal, Eye, Download, FileText } from "lucide-react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 
 export const columns: ColumnDef<any>[] = [
+  // ----------------------------------
+  // ⭐ FIRST COLUMN → AUTO ROW NUMBER
+  // ----------------------------------
   {
-    accessorKey: "creditNoteId",
-    header: "Credit Note #",
+    id: "serial",
+    header: "No.",
+    cell: ({ row }) => row.index + 1,
   },
+
+  // ❌ REMOVED creditNoteNumber COLUMN
+
   {
     accessorKey: "creditNoteDate",
     header: "Date",
   },
   {
-    accessorKey: "customer",
+    accessorKey: "customerName",
     header: "Customer",
   },
   {
-    accessorKey: "invoiceReference",
+    accessorKey: "invoiceNumber",
     header: "Invoice Ref",
   },
   {
@@ -33,10 +30,10 @@ export const columns: ColumnDef<any>[] = [
     header: "Reason",
   },
   {
-    accessorKey: "totalCredit",
+    accessorKey: "amount",
     header: "Total Credit",
     cell: ({ row }) => {
-      const amount = parseFloat(row.getValue("totalCredit"));
+      const amount = parseFloat(row.getValue("amount"));
       const formatted = new Intl.NumberFormat("en-IN", {
         style: "currency",
         currency: "INR",
@@ -64,35 +61,4 @@ export const columns: ColumnDef<any>[] = [
       );
     },
   },
-  {
-    id: "actions",
-    cell: ({ row }) => {
-      const creditNote = row.original;
-      return (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon">
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuLabel>Actions</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem>
-              <Eye className="mr-2 h-4 w-4" />
-              View Details
-            </DropdownMenuItem>
-            <DropdownMenuItem>
-              <FileText className="mr-2 h-4 w-4" />
-              View Invoice
-            </DropdownMenuItem>
-            <DropdownMenuItem>
-              <Download className="mr-2 h-4 w-4" />
-              Download Credit Note
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      );
-    },
-  },
-]; 
+];

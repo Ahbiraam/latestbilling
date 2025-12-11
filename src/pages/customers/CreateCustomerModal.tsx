@@ -15,7 +15,6 @@ import {
 } from "@/components/ui/form";
 
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 
 import {
   Select,
@@ -37,22 +36,34 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
 
+
 // ---------------- SCHEMA ----------------
 const customerSchema = z.object({
   code: z.string().min(2),
   name: z.string().min(2),
-  type: z.string().min(1), // UUID
-  address: z.string().min(10),
+
+  type: z.string().min(1),
+
+  address1: z.string().min(2),
+  address2: z.string().optional(),
+
   email: z.string().email(),
   whatsapp: z.string().min(10),
   phone: z.string().min(10),
   contactPerson: z.string().min(2),
-  gstNumber: z.string().optional().nullable(),
-  panNumber: z.string().optional().nullable(),
-  paymentTerms: z.number().int(),
-  accountManager: z.string().min(1), // UUID
-  isActive: z.boolean().nullable(),
+
+  gstNumber: z.string().optional(),
+  panNumber: z.string().optional(),
+
+  paymentTerms: z.coerce.number().min(0),
+
+  gstExemption: z.enum(["Yes", "No"]),
+  exemptionReason: z.string().optional(),
+
+  accountManager: z.string().min(1),
+  isActive: z.boolean(),
 });
+
 
 // ---------------- AUTO CODE ----------------
 function generateCustomerCode(name?: string) {
@@ -61,6 +72,7 @@ function generateCustomerCode(name?: string) {
   if (!name) return `${prefix}${num}`;
   return `${prefix}-${name.substring(0, 3).toUpperCase()}${num}`;
 }
+
 
 export function CreateCustomerModal({ open, onOpenChange, onCustomerCreated }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -74,85 +86,133 @@ export function CreateCustomerModal({ open, onOpenChange, onCustomerCreated }) {
     defaultValues: {
       name: "",
       code: generateCustomerCode(),
+
       type: "",
-      address: "",
+      address1: "",
+      address2: "",
+
       email: "",
       whatsapp: "",
       phone: "",
       contactPerson: "",
+
       gstNumber: "",
       panNumber: "",
-      paymentTerms: 30,
+
+      gstExemption: "No",
+      exemptionReason: "",
+
+      paymentTerms: 0,
+
       accountManager: "",
       isActive: true,
     },
   });
 
-  // ---------- SAFE AUTO CODE ----------
+
+  // ---------- AUTO CODE ----------
   const watchedName = form.watch("name");
   useEffect(() => {
     form.setValue("code", generateCustomerCode(watchedName));
   }, [watchedName]);
 
-  // ---------- LOAD CUSTOMER TYPES ----------
+
+  // ---------- LOAD ACTIVE CUSTOMER TYPES ----------
   useEffect(() => {
     async function loadTypes() {
       try {
         const res = await apiFetch("/api/v1/api/v1/client-types");
-        const data = await res.json();
-        setClientTypes(data?.data || data?.root || []);
-      } catch {
+        const body = await res.json();
+
+        const list = Array.isArray(body)
+          ? body
+          : Array.isArray(body?.data)
+          ? body.data
+          : Array.isArray(body?.items)
+          ? body.items
+          : Array.isArray(body?.root)
+          ? body.root
+          : [];
+
+        const active = list.filter((ct) => ct?.isActive === true);
+        setClientTypes(active);
+      } catch (err) {
+        console.error(err);
         toast.error("Failed to load customer types");
       }
     }
+
     if (open) loadTypes();
   }, [open]);
 
-  // ---------- LOAD ACCOUNT MANAGERS ----------
+
+  // ---------- LOAD ACTIVE ACCOUNT MANAGERS ----------
   useEffect(() => {
     async function loadManagers() {
       try {
         const res = await apiFetch(
           "/api/v1/account-managers/api/v1/account-managers"
         );
-        const data = await res.json();
-        setAccountManagers(data?.root || data?.data || []);
-      } catch {
+        const body = await res.json();
+
+        const list = Array.isArray(body)
+          ? body
+          : Array.isArray(body?.data)
+          ? body.data
+          : Array.isArray(body?.root)
+          ? body.root
+          : [];
+
+        const active = list.filter((m) => m?.isActive === true);
+        setAccountManagers(active);
+      } catch (err) {
+        console.error(err);
         toast.error("Failed to load account managers");
       }
     }
+
     if (open) loadManagers();
   }, [open]);
+
 
   // ---------- SUBMIT ----------
   async function onSubmit(values) {
     try {
       setIsSubmitting(true);
 
-  const payload = {
-  code: values.code,
-  name: values.name,
+      // Combine address1 + address2 → final address
+      const fullAddress =
+        values.address2?.trim()
+          ? `${values.address1}, ${values.address2}`
+          : values.address1;
 
-  // REQUIRED: backend wants both fields
-  type: values.type,
-  typeId: values.type,
+      const payload = {
+        code: values.code,
+        name: values.name,
 
-  address: values.address,
-  email: values.email,
-  whatsapp: values.whatsapp,
-  phone: values.phone,
-  contactPerson: values.contactPerson,
-  gstNumber: values.gstNumber,
-  panNumber: values.panNumber,
-  paymentTerms: Number(values.paymentTerms),
+        type: values.type,
+        typeId: values.type,
 
-  // REQUIRED: backend wants both fields
-  accountManager: values.accountManager,
-  accountManagerId: values.accountManager,
+        address: fullAddress,
 
-  isActive: values.isActive,
-};
+        email: values.email,
+        whatsapp: values.whatsapp,
+        phone: values.phone,
+        contactPerson: values.contactPerson,
 
+        gstNumber: values.gstNumber,
+        panNumber: values.panNumber,
+
+        paymentTerms: values.paymentTerms,
+
+        gstExemption: values.gstExemption,
+        exemptionReason: values.exemptionReason,
+
+        accountManager: values.accountManager,
+        accountManagerId: values.accountManager,
+
+        isActive: values.isActive,
+      };
 
       const res = await apiFetch("/api/v1/api/v1/customers", {
         method: "POST",
@@ -160,7 +220,6 @@ export function CreateCustomerModal({ open, onOpenChange, onCustomerCreated }) {
       });
 
       const data = await res.json();
-
       if (!res.ok) {
         toast.error(data?.message || "Customer creation failed");
         return;
@@ -170,12 +229,15 @@ export function CreateCustomerModal({ open, onOpenChange, onCustomerCreated }) {
       onCustomerCreated?.();
       onOpenChange(false);
       form.reset();
-    } catch {
+
+    } catch (err) {
+      console.error(err);
       toast.error("Unexpected error");
     } finally {
       setIsSubmitting(false);
     }
   }
+
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -186,6 +248,7 @@ export function CreateCustomerModal({ open, onOpenChange, onCustomerCreated }) {
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+
             <div className="grid grid-cols-2 gap-4">
 
               {/* NAME */}
@@ -200,7 +263,7 @@ export function CreateCustomerModal({ open, onOpenChange, onCustomerCreated }) {
                 )}
               />
 
-              {/* CODE */}
+              {/* AUTO CODE */}
               <FormField
                 name="code"
                 control={form.control}
@@ -212,7 +275,7 @@ export function CreateCustomerModal({ open, onOpenChange, onCustomerCreated }) {
                 )}
               />
 
-              {/* CUSTOMER TYPE (UUID) */}
+              {/* CUSTOMER TYPE */}
               <FormField
                 name="type"
                 control={form.control}
@@ -233,7 +296,6 @@ export function CreateCustomerModal({ open, onOpenChange, onCustomerCreated }) {
                         ))}
                       </SelectContent>
                     </Select>
-                    <FormMessage />
                   </FormItem>
                 )}
               />
@@ -250,14 +312,26 @@ export function CreateCustomerModal({ open, onOpenChange, onCustomerCreated }) {
                 )}
               />
 
-              {/* ADDRESS */}
+              {/* ADDRESS LINE 1 */}
               <FormField
-                name="address"
+                name="address1"
                 control={form.control}
                 render={({ field }) => (
                   <FormItem className="col-span-2">
-                    <FormLabel>Address</FormLabel>
-                    <FormControl><Textarea {...field} /></FormControl>
+                    <FormLabel>Address Line 1</FormLabel>
+                    <FormControl><Input {...field} /></FormControl>
+                  </FormItem>
+                )}
+              />
+
+              {/* ADDRESS LINE 2 */}
+              <FormField
+                name="address2"
+                control={form.control}
+                render={({ field }) => (
+                  <FormItem className="col-span-2">
+                    <FormLabel>Address Line 2</FormLabel>
+                    <FormControl><Input {...field} /></FormControl>
                   </FormItem>
                 )}
               />
@@ -298,7 +372,7 @@ export function CreateCustomerModal({ open, onOpenChange, onCustomerCreated }) {
                 )}
               />
 
-              {/* GST */}
+              {/* GST NUMBER */}
               <FormField
                 name="gstNumber"
                 control={form.control}
@@ -310,7 +384,7 @@ export function CreateCustomerModal({ open, onOpenChange, onCustomerCreated }) {
                 )}
               />
 
-              {/* PAN */}
+              {/* PAN NUMBER */}
               <FormField
                 name="panNumber"
                 control={form.control}
@@ -328,21 +402,51 @@ export function CreateCustomerModal({ open, onOpenChange, onCustomerCreated }) {
                 control={form.control}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Payment Terms</FormLabel>
+                    <FormLabel>Payment Terms (Days)</FormLabel>
                     <FormControl>
-                      <Input
-                        type="number"
-                        {...field}
-                        onChange={(e) =>
-                          field.onChange(Number(e.target.value))
-                        }
-                      />
+                      <Input type="number" {...field} />
                     </FormControl>
                   </FormItem>
                 )}
               />
 
-              {/* ACCOUNT MANAGER (UUID) */}
+              {/* GST EXEMPTION */}
+              <FormField
+                name="gstExemption"
+                control={form.control}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>GST Exemption</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="Yes">Yes</SelectItem>
+                        <SelectItem value="No">No</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </FormItem>
+                )}
+              />
+
+              {/* EXEMPTION REASON */}
+              {form.watch("gstExemption") === "Yes" && (
+                <FormField
+                  name="exemptionReason"
+                  control={form.control}
+                  render={({ field }) => (
+                    <FormItem className="col-span-2">
+                      <FormLabel>Exemption Reason</FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                    </FormItem>
+                  )}
+                />
+              )}
+
+              {/* ACCOUNT MANAGER */}
               <FormField
                 name="accountManager"
                 control={form.control}
@@ -367,22 +471,23 @@ export function CreateCustomerModal({ open, onOpenChange, onCustomerCreated }) {
                 )}
               />
 
-              {/* ACTIVE SWITCH */}
+              {/* ACTIVE */}
               <FormField
                 name="isActive"
                 control={form.control}
                 render={({ field }) => (
-                  <FormItem className="flex justify-between p-4 border rounded">
+                  <FormItem className="flex justify-between p-4 border rounded col-span-2">
                     <FormLabel>Active</FormLabel>
                     <FormControl>
                       <Switch
-                        checked={field.value ?? false}
+                        checked={field.value}
                         onCheckedChange={(v) => field.onChange(Boolean(v))}
                       />
                     </FormControl>
                   </FormItem>
                 )}
               />
+
             </div>
 
             {/* BUTTONS */}
@@ -392,10 +497,11 @@ export function CreateCustomerModal({ open, onOpenChange, onCustomerCreated }) {
               </Button>
 
               <Button disabled={isSubmitting} type="submit">
-                {isSubmitting && <Loader2 className="mr-2 animate-spin" />}
+                {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 Create Customer
               </Button>
             </div>
+
           </form>
         </Form>
       </DialogContent>
