@@ -41,13 +41,13 @@ import { toast } from "sonner";
 type ServiceType = {
   id: string;
   companyId?: string;
-  code: string;
   name: string;
   description?: string;
-  sacCode?: string;
+  code?: string;
   taxRate?: number;
   isActive?: boolean;
 };
+
 
 type CustomerType = {
   id: string;
@@ -88,12 +88,25 @@ const currentUser = {
  * Validation schemas
  * ------------------------- */
 const serviceTypeSchema = z.object({
-  code: z.string().min(2, "Code must be at least 2 characters"),
   name: z.string().min(2, "Name must be at least 2 characters"),
+  gstApplicable: z.boolean(),
+  sacCode: z
+    .string()
+    .min(4, "SAC Code must be at least 4 characters")
+    .max(10, "SAC Code must be at most 10 characters")
+    .optional(),
   description: z.string().optional(),
   taxRate: z.coerce.number().min(0).max(100).optional(),
   isActive: z.boolean().optional(),
-});
+}).refine(
+  (data) => !data.gstApplicable || !!data.sacCode,
+  {
+    message: "SAC Code is required when GST is applicable",
+    path: ["sacCode"],
+  }
+);
+
+
 
 const customerTypeSchema = z.object({
   name: z.string().min(2),
@@ -140,13 +153,17 @@ export default function ServiceTypesPage(): JSX.Element {
   const serviceTypeForm = useForm<z.infer<typeof serviceTypeSchema>>({
     resolver: zodResolver(serviceTypeSchema),
     defaultValues: {
-      code: "",
       name: "",
+      gstApplicable: false,
+      sacCode: undefined,
       description: "",
       taxRate: 0,
       isActive: true,
     },
   });
+
+
+
 
   const customerTypeForm = useForm<z.infer<typeof customerTypeSchema>>({
     resolver: zodResolver(customerTypeSchema),
@@ -199,10 +216,10 @@ export default function ServiceTypesPage(): JSX.Element {
         const list: any[] = Array.isArray(body)
           ? body
           : Array.isArray(body?.data)
-          ? body.data
-          : Array.isArray(body?.items)
-          ? body.items
-          : [];
+            ? body.data
+            : Array.isArray(body?.items)
+              ? body.items
+              : [];
         const normalized = list.map((it: any) => ({
           id: it.id ?? it._id ?? String(it.code ?? Date.now()),
           code: it.code,
@@ -243,10 +260,10 @@ export default function ServiceTypesPage(): JSX.Element {
         const list: any[] = Array.isArray(body)
           ? body
           : Array.isArray(body?.data)
-          ? body.data
-          : Array.isArray(body?.items)
-          ? body.items
-          : [];
+            ? body.data
+            : Array.isArray(body?.items)
+              ? body.items
+              : [];
         const normalized = list.map((it: any) => ({
           id: it.id ?? it._id ?? String(it.code ?? Date.now()),
           code: it.code,
@@ -319,12 +336,11 @@ export default function ServiceTypesPage(): JSX.Element {
   const visibleAccounts = accountsManagers.filter(
     (a) => !a.companyId || a.companyId === companyId
   );
-
   const filteredServiceTypes = visibleServiceTypes.filter(
     (t) =>
-      t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      t.code.toLowerCase().includes(searchQuery.toLowerCase())
+      t.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
   const filteredCustomerTypes = visibleCustomerTypes.filter(
     (t) =>
       t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -366,12 +382,17 @@ export default function ServiceTypesPage(): JSX.Element {
       const rec = serviceTypes.find((s) => s.id === id);
       if (!rec) return toast.error("Service not found");
       serviceTypeForm.reset({
-        code: rec.code,
         name: rec.name,
-        description: rec.description,
+        gstApplicable: !!rec.code,          // true if SAC exists
+        sacCode: rec.code ?? "",            // never undefined
+        description: rec.description ?? "",
         taxRate: rec.taxRate ?? 0,
         isActive: rec.isActive ?? true,
       });
+
+
+
+
     } else if (mode === "customer") {
       const rec = customerTypes.find((c) => c.id === id);
       if (!rec) return toast.error("Customer type not found");
@@ -405,57 +426,64 @@ export default function ServiceTypesPage(): JSX.Element {
     setIsSubmitting(true);
 
     try {
+      // Prepare payload for backend
       const payload = {
-        code: values.code,
+        code: values.gstApplicable
+          ? values.sacCode?.trim() || `SRV-${Date.now()}` // use entered SAC Code or auto-generate
+          : `SRV-${Date.now()}`, // always generate if not entered
         name: values.name,
         description: values.description ?? "",
-        taxRate: values.taxRate ?? 0,
-        isActive:
-          typeof values.isActive === "boolean" ? values.isActive : true,
+        taxRate: Math.max(0, values.taxRate ?? 0),
+        isActive: typeof values.isActive === "boolean" ? values.isActive : true,
       };
 
       if (editingId) {
-        const res = await apiFetch(
-          `/api/v1/api/v1/service-types/${editingId}`,
-          {
-            method: "PUT",
-            body: JSON.stringify(payload),
-          }
-        );
+        // EDIT existing service type
+        const res = await apiFetch(`/api/v1/api/v1/service-types/${editingId}`, {
+          method: "PUT",
+          body: JSON.stringify(payload),
+        });
+
         if (!res.ok) {
           const body = await tryParseJson(res);
           throw new Error(body?.message || `Update failed (${res.status})`);
         }
+
         const updated = await res.json();
-        const normalized = {
+        const normalized: ServiceType = {
           id: updated.id ?? updated._id ?? editingId,
           ...payload,
           companyId: updated.companyId ?? currentUser.companyId,
-        } as ServiceType;
+        };
 
         setServiceTypes((prev) =>
           prev.map((p) => (p.id === editingId ? normalized : p))
         );
         toast.success("Service updated");
       } else {
+        // CREATE new service type
         const res = await apiFetch(`/api/v1/api/v1/service-types`, {
           method: "POST",
           body: JSON.stringify(payload),
         });
+
         if (!res.ok) {
           const body = await tryParseJson(res);
           throw new Error(body?.message || `Create failed (${res.status})`);
         }
+
         const created = await res.json();
-        const normalized = {
+        const normalized: ServiceType = {
           id: created.id ?? created._id ?? `s-${Date.now()}`,
           ...payload,
           companyId: created.companyId ?? currentUser.companyId,
-        } as ServiceType;
+        };
+
         setServiceTypes((prev) => [...prev, normalized]);
         toast.success("Service created");
       }
 
+      // Reset form & close dialog
       setIsDialogOpen(false);
       setEditingId(null);
       serviceTypeForm.reset();
@@ -763,9 +791,9 @@ export default function ServiceTypesPage(): JSX.Element {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Code</TableHead>
                   <TableHead>Name</TableHead>
                   <TableHead>Description</TableHead>
+                  <TableHead>SAC Code</TableHead>   {/* <-- added */}
                   <TableHead>Tax Rate</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="w-[160px]">Actions</TableHead>
@@ -781,15 +809,14 @@ export default function ServiceTypesPage(): JSX.Element {
                 ) : filteredServiceTypes.length ? (
                   filteredServiceTypes.map((type) => (
                     <TableRow key={type.id}>
-                      <TableCell className="font-medium">{type.code}</TableCell>
                       <TableCell>{type.name}</TableCell>
                       <TableCell>{type.description}</TableCell>
+                      <TableCell>{type.code ?? "-"}</TableCell> {/* <-- added */}
                       <TableCell>{type.taxRate ?? 0}%</TableCell>
                       <TableCell>
                         <span
-                          className={`inline-block rounded-full px-2 py-0.5 text-sm ${
-                            type.isActive ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-700"
-                          }`}
+                          className={`inline-block rounded-full px-2 py-0.5 text-sm ${type.isActive ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-700"
+                            }`}
                         >
                           {type.isActive ? "Active" : "Inactive"}
                         </span>
@@ -799,7 +826,6 @@ export default function ServiceTypesPage(): JSX.Element {
                           <Button variant="ghost" size="icon" onClick={() => openEditDialog("service", type.id)}>
                             <Pencil className="h-4 w-4" />
                           </Button>
-
                           <Button variant="ghost" size="icon" onClick={() => deleteServiceType(type.id)}>
                             <Trash2 className="h-4 w-4 text-red-600" />
                           </Button>
@@ -818,6 +844,7 @@ export default function ServiceTypesPage(): JSX.Element {
             </Table>
           </div>
         </TabsContent>
+
 
         {/* Customer tab */}
         <TabsContent value="customer">
@@ -848,9 +875,8 @@ export default function ServiceTypesPage(): JSX.Element {
                       <TableCell>{t.description}</TableCell>
                       <TableCell>
                         <span
-                          className={`inline-block rounded-full px-2 py-0.5 text-sm ${
-                            t.isActive ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-700"
-                          }`}
+                          className={`inline-block rounded-full px-2 py-0.5 text-sm ${t.isActive ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-700"
+                            }`}
                         >
                           {t.isActive ? "Active" : "Inactive"}
                         </span>
@@ -942,8 +968,8 @@ export default function ServiceTypesPage(): JSX.Element {
               {dialogMode === "service"
                 ? "Service Type"
                 : dialogMode === "customer"
-                ? "Customer Type"
-                : "Accounts Manager"}
+                  ? "Customer Type"
+                  : "Accounts Manager"}
             </DialogTitle>
             <DialogDescription>
               {dialogMode === "service" && "Service type belongs to current company only."}
@@ -955,15 +981,6 @@ export default function ServiceTypesPage(): JSX.Element {
           {dialogMode === "service" && (
             <Form {...serviceTypeForm}>
               <form onSubmit={serviceTypeForm.handleSubmit(submitServiceType)} className="space-y-4">
-                <FormField control={serviceTypeForm.control} name="code" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Code</FormLabel>
-                    <FormControl>
-                      <Input {...field} placeholder="Code" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
 
                 <FormField control={serviceTypeForm.control} name="name" render={({ field }) => (
                   <FormItem>
@@ -974,6 +991,39 @@ export default function ServiceTypesPage(): JSX.Element {
                     <FormMessage />
                   </FormItem>
                 )} />
+
+                {/* GST Applicable */}
+                <FormField
+                  control={serviceTypeForm.control}
+                  name="gstApplicable"
+                  render={({ field }) => (
+                    <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                      <FormLabel>GST Applicable</FormLabel>
+                      <FormControl>
+                        <Switch checked={field.value} onCheckedChange={field.onChange} />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+
+
+                {serviceTypeForm.watch("gstApplicable") && (
+                  <FormField
+                    control={serviceTypeForm.control}
+                    name="sacCode"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>SAC Code</FormLabel>
+                        <FormControl>
+                          <Input {...field} placeholder="Eg: 998313" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
+
+
 
                 <FormField control={serviceTypeForm.control} name="description" render={({ field }) => (
                   <FormItem>
@@ -989,7 +1039,16 @@ export default function ServiceTypesPage(): JSX.Element {
                   <FormItem>
                     <FormLabel>Tax Rate (%)</FormLabel>
                     <FormControl>
-                      <Input {...field} type="number" onChange={(e) => field.onChange(Number(e.target.value))} placeholder="Tax rate" />
+                      <Input
+                        {...field}
+                        type="number"
+                        min={0}
+                        max={100}
+                        onChange={(e) => {
+                          const value = Number(e.target.value);
+                          field.onChange(value < 0 ? 0 : value);
+                        }}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

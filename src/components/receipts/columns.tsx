@@ -60,35 +60,35 @@ export const columns: ColumnDef<any>[] = [
       );
     },
   },
-  {
-    id: "actions",
-    cell: ({ row }) => {
-      const receipt = row.original;
-      return (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon">
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuLabel>Actions</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem>
-              <Eye className="mr-2 h-4 w-4" />
-              View Details
-            </DropdownMenuItem>
-            <DropdownMenuItem>
-              <FileText className="mr-2 h-4 w-4" />
-              View Invoices
-            </DropdownMenuItem>
-            <DropdownMenuItem>
-              <Download className="mr-2 h-4 w-4" />
-              Download Receipt
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      );
-    },
-  },
+  // {
+  //   id: "actions",
+  //   cell: ({ row }) => {
+  //     const receipt = row.original;
+  //     return (
+  //       <DropdownMenu>
+  //         <DropdownMenuTrigger asChild>
+  //           <Button variant="ghost" size="icon">
+  //             <MoreHorizontal className="h-4 w-4" />
+  //           </Button>
+  //         </DropdownMenuTrigger>
+  //         <DropdownMenuContent align="end">
+  //           <DropdownMenuLabel>Actions</DropdownMenuLabel>
+  //           <DropdownMenuSeparator />
+  //           <DropdownMenuItem>
+  //             <Eye className="mr-2 h-4 w-4" />
+  //             View Details
+  //           </DropdownMenuItem>
+  //           <DropdownMenuItem>
+  //             <FileText className="mr-2 h-4 w-4" />
+  //             View Invoices
+  //           </DropdownMenuItem>
+  //           <DropdownMenuItem>
+  //             <Download className="mr-2 h-4 w-4" />
+  //             Download Receipt
+  //           </DropdownMenuItem>
+  //         </DropdownMenuContent>
+  //       </DropdownMenu>
+  //     );
+  //   },
+  // },
 ]; 

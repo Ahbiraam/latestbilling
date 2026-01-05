@@ -21,6 +21,9 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import jsPDF from "jspdf"
+
+import  autoTable from "jspdf-autotable"
 
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/api";
@@ -77,17 +80,52 @@ export function DataTable() {
     }
   };
 
-  // Download PDF
-  const downloadPdf = async (id: string) => {
-    const response = await apiFetch(`/api/v1/api/v1/invoices/${id}/pdf`);
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
+ // Download PDF (FRONTEND GENERATED)
+const downloadPdf = async (id: string) => {
+  try {
+    // 1. Fetch invoice data
+    const response = await apiFetch(`/api/v1/api/v1/invoices/${id}`);
+    const invoice = await response.json();
 
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `invoice-${id}.pdf`;
-    link.click();
-  };
+    // 2. Create PDF
+    const doc = new jsPDF();
+
+    // HEADER
+    doc.setFontSize(18);
+    doc.text("INVOICE", 14, 20);
+
+    doc.setFontSize(10);
+    doc.text(`Invoice No: ${invoice.invoiceNumber}`, 14, 30);
+    doc.text(`Invoice Date: ${invoice.invoiceDate}`, 14, 36);
+    doc.text(`Customer: ${invoice.customerName}`, 14, 42);
+
+    // TABLE
+    autoTable(doc, {
+      startY: 50,
+      head: [["Service", "Description", "Qty", "Rate", "Tax", "Total"]],
+      body: invoice.lineItems.map((item: any) => [
+        item.serviceTypeName,
+        item.description,
+        item.quantity,
+        item.rate,
+        item.taxAmount,
+        item.total,
+      ]),
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [34, 197, 94] }, // green
+    });
+
+
+
+
+    // 3. Save PDF
+    doc.save(`Invoice-${invoice.invoiceNumber}.pdf`);
+  } catch (error) {
+    console.error("PDF generation failed:", error);
+    alert("Failed to generate invoice PDF");
+  }
+};
+
 
   // Table columns
   const columns: ColumnDef<Invoice>[] = [
@@ -135,26 +173,16 @@ export function DataTable() {
 
             {/* PDF */}
             <Button
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9 rounded-full hover:bg-green-100 text-green-600 border border-green-200"
-              onClick={() => downloadPdf(invoice.id)}
-            >
-              <Download size={18} />
-            </Button>
+  variant="ghost"
+  size="icon"
+  className="h-9 w-9 rounded-full hover:bg-green-100 text-green-600 border border-green-200"
+  onClick={() => downloadPdf(invoice.id)}
+>
+  <Download size={18} />
+</Button>
 
-            {/* EMAIL */}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9 rounded-full hover:bg-purple-100 text-purple-600 border border-purple-200"
-              onClick={() => {
-                setEmailInvoiceId(invoice.id);
-                setEmailOpen(true);
-              }}
-            >
-              <Mail size={18} />
-            </Button>
+
+         
 
           </div>
         );
