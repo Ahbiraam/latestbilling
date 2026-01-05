@@ -1,6 +1,5 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-
 import {
   Table,
   TableBody,
@@ -13,198 +12,110 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Search, Plus, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import type { Customer } from "@/lib/types";
-import { apiFetch } from "@/lib/api";
 
-// Extract list from backend response
-const extractArray = (res: any) => {
-  if (Array.isArray(res)) return res;
-  if (Array.isArray(res?.data)) return res.data;
-  return [];
-};
+// Mock data
+const mockCustomers: Customer[] = [
+  {
+    id: "1",
+    name: "Acme Corporation",
+    code: "ACME001",
+    type: "Corporate",
+    address: "123 Business Ave, Suite 100, Business City, 12345",
+    email: "contact@acme.com",
+    whatsapp: "+1234567890",
+    phone: "+1234567890",
+    contactPerson: "John Smith",
+    gstNumber: "GST123456789",
+    panNumber: "PAN1234567",
+    paymentTerms: 30,
+    accountManager: "1",
+    isActive: true,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  },
+  {
+    id: "2",
+    name: "Tech Startups Inc",
+    code: "TECH001",
+    type: "Startup",
+    address: "456 Innovation Street, Tech Hub, 67890",
+    email: "info@techstartups.com",
+    whatsapp: "+1234567891",
+    phone: "+1234567891",
+    contactPerson: "Jane Doe",
+    gstNumber: "GST987654321",
+    panNumber: "PAN7654321",
+    paymentTerms: 15,
+    accountManager: "2",
+    isActive: true,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  },
+];
 
 export default function CustomersPage() {
   const navigate = useNavigate();
-
-  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [customers, setCustomers] = useState(mockCustomers);
   const [searchQuery, setSearchQuery] = useState("");
-  const [showActive, setShowActive] = useState(true);
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-  const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
 
-  // ===========================
-  // FETCH CUSTOMERS
-  // ===========================
-  useEffect(() => {
-    const fetchCustomers = async () => {
-      setLoading(true);
-      try {
-        const res = await apiFetch("/api/v1/api/v1/customers");
-        const json = await res.json();
-        const list = extractArray(json);
-        setCustomers(list);
-      } catch {
-        toast.error("Failed to load customers");
-        setCustomers([]);
-      } finally {
-        setLoading(false);
-      }
-    };
+  const filteredCustomers = customers.filter(
+    (customer) =>
+      customer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      customer.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      customer.email.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
-    fetchCustomers();
-  }, []);
-
-  // ===========================
-  // FILTER LIST
-  // ===========================
-  const filteredCustomers = customers.filter((c) => {
-    const q = searchQuery.toLowerCase();
-    const matches =
-      !q ||
-      c.name?.toLowerCase().includes(q) ||
-      c.code?.toLowerCase().includes(q) ||
-      // c.mobile?.toLowerCase().includes(q) ||
-      c.gstNumber?.toLowerCase().includes(q) ||
-      c.contactPerson?.toLowerCase().includes(q);
-
-    const status = showActive ? c.isActive : !c.isActive;
-
-    return matches && status;
-  });
-
-  // ===========================
-  // OPEN EDIT
-  // ===========================
-  const openEdit = async (id: string) => {
-    setOpen(true);
-    setSelectedCustomer(null);
-
+  async function handleDelete(id: string) {
     try {
-      const res = await apiFetch(`/api/v1/api/v1/customers/${id}`);
-      const json = await res.json();
-      setSelectedCustomer(json as Customer);
-    } catch {
-      toast.error("Failed to load customer");
-      setOpen(false);
+      // Simulate API call
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      setCustomers(customers.filter((c) => c.id !== id));
+      toast.success("Customer deleted successfully");
+    } catch (error) {
+      toast.error("Failed to delete customer");
     }
-  };
+  }
 
-  // ===========================
-  // UPDATE CUSTOMER
-  // ===========================
-  const handleSave = async () => {
-    if (!selectedCustomer) return;
-
-    setSaving(true);
-
-    try {
-      // Only allowed fields
-      const payload = {
-        name: selectedCustomer.name,
-        contactPerson: selectedCustomer.contactPerson,
-        email: selectedCustomer.email,
-        isActive: selectedCustomer.isActive,
-      };
-
-      const res = await apiFetch(
-        `/api/v1/api/v1/customers/${selectedCustomer.id}`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        }
-      );
-
-      if (!res.ok) throw new Error("Update failed");
-
-      // Update locally
-      setCustomers((prev) =>
-        prev.map((c) =>
-          c.id === selectedCustomer.id ? { ...c, ...payload } : c
-        )
-      );
-
-      toast.success("Customer updated");
-      setOpen(false);
-    } catch {
-      toast.error("Failed to update customer");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // ===========================
-  // DELETE CUSTOMER
-  // ===========================
-  const handleDelete = async (id: string) => {
-    if (!window.confirm("Are you sure you want to delete this customer?"))
-      return;
-
-    try {
-      const res = await apiFetch(`/api/v1/api/v1/customers/${id}`, {
-        method: "DELETE",
-      });
-
-      if (!res.ok) throw new Error("Delete failed");
-
-      setCustomers((prev) => prev.filter((c) => c.id !== id));
-      toast.success("Customer deleted");
-    } catch {
-      toast.error("Failed to delete");
-    }
-  };
-
-  // ===========================
-  // UI
-  // ===========================
   return (
     <div className="p-8">
-
       <div className="mb-8">
-        <h1 className="text-2xl font-semibold">Customers</h1>
-        <p className="text-muted-foreground">Manage customer details.</p>
+        <h1>Customers</h1>
+        <p className="text-muted-foreground">
+          Manage your customer database
+        </p>
       </div>
 
-      {/* Search + Filter + Add */}
-      <div className="flex items-center justify-between mb-6 gap-4">
-
-        <div className="relative w-[320px]">
-          <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+      <div className="flex items-center justify-between mb-6">
+        <div className="relative w-[300px]">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search by name, code, mobile, GST..."
+            placeholder="Search customers..."
             className="pl-8"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
         </div>
 
-        <div className="flex items-center gap-2">
-          <Switch checked={showActive} onCheckedChange={setShowActive} />
-          <span className="text-sm">
-            {showActive ? "Showing Active" : "Showing Inactive"}
-          </span>
-        </div>
-
         <Button onClick={() => navigate("/customers/create")}>
           <Plus className="mr-2 h-4 w-4" />
           Add Customer
         </Button>
-
       </div>
 
-      {/* TABLE */}
-      <div className="rounded-md border overflow-x-auto">
+      <div className="rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
@@ -213,149 +124,63 @@ export default function CustomersPage() {
               <TableHead>Type</TableHead>
               <TableHead>Contact Person</TableHead>
               <TableHead>Email</TableHead>
-              <TableHead>Mobile</TableHead>
-              <TableHead>GST No</TableHead>
+              <TableHead>Phone</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead className="text-center">Edit</TableHead>
-              <TableHead className="text-center">Delete</TableHead>
+              <TableHead className="w-[100px]">Actions</TableHead>
             </TableRow>
           </TableHeader>
-
           <TableBody>
-            {loading ? (
-              <TableRow>
-                <TableCell colSpan={10} className="text-center py-6">
-                  Loading...
+            {filteredCustomers.map((customer) => (
+              <TableRow key={customer.id}>
+                <TableCell className="font-medium">{customer.code}</TableCell>
+                <TableCell>{customer.name}</TableCell>
+                <TableCell>{customer.type}</TableCell>
+                <TableCell>{customer.contactPerson}</TableCell>
+                <TableCell>{customer.email}</TableCell>
+                <TableCell>{customer.phone}</TableCell>
+                <TableCell>
+                  <Switch checked={customer.isActive} disabled />
                 </TableCell>
-              </TableRow>
-            ) : filteredCustomers.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={10} className="text-center py-6">
-                  No customers found
-                </TableCell>
-              </TableRow>
-            ) : (
-              filteredCustomers.map((c) => (
-                <TableRow key={c.id}>
-                  <TableCell>{c.code}</TableCell>
-                  <TableCell>{c.name}</TableCell>
-                  <TableCell>{c.type}</TableCell>
-                  <TableCell>{c.contactPerson}</TableCell>
-                  <TableCell>{c.email}</TableCell>
-                  <TableCell>{c.phone}</TableCell>
-                  <TableCell>{c.gstNumber}</TableCell>
-
-                  <TableCell>
-                    <Switch checked={!!c.isActive} disabled />
-                  </TableCell>
-
-                  <TableCell className="text-center">
+                <TableCell>
+                  <div className="flex items-center gap-2">
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => openEdit(c.id)}
+                      onClick={() => navigate(`/customers/${customer.id}/edit`)}
                     >
                       <Pencil className="h-4 w-4" />
                     </Button>
-                  </TableCell>
-
-                  <TableCell className="text-center">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleDelete(c.id)}
-                    >
-                      <Trash2 className="h-4 w-4 text-red-600" />
-                    </Button>
-                  </TableCell>
-
-                </TableRow>
-              ))
-            )}
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="ghost" size="icon">
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete Customer</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Are you sure you want to delete this customer? This action
+                            cannot be undone.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={() => handleDelete(customer.id)}
+                          >
+                            Delete
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
           </TableBody>
-
         </Table>
       </div>
-
-      {/* EDIT MODAL */}
-      <Dialog
-        open={open}
-        onOpenChange={(v) => {
-          if (!v) setSelectedCustomer(null);
-          setOpen(v);
-        }}
-      >
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Edit Customer</DialogTitle>
-            <DialogDescription>Update customer details</DialogDescription>
-          </DialogHeader>
-
-          {!selectedCustomer ? (
-            <div className="py-4 text-center">Loading...</div>
-          ) : (
-            <div className="space-y-3 mt-4">
-
-              <Input
-                value={selectedCustomer.name || ""}
-                onChange={(e) =>
-                  setSelectedCustomer({
-                    ...selectedCustomer,
-                    name: e.target.value,
-                  })
-                }
-                placeholder="Customer Name"
-              />
-
-              <Input
-                value={selectedCustomer.contactPerson || ""}
-                onChange={(e) =>
-                  setSelectedCustomer({
-                    ...selectedCustomer,
-                    contactPerson: e.target.value,
-                  })
-                }
-                placeholder="Contact Person"
-              />
-
-              <Input
-                value={selectedCustomer.email || ""}
-                onChange={(e) =>
-                  setSelectedCustomer({
-                    ...selectedCustomer,
-                    email: e.target.value,
-                  })
-                }
-                placeholder="Email"
-              />
-
-              <div className="flex items-center justify-between border rounded-md p-2">
-                <span>Active</span>
-                <Switch
-                  checked={!!selectedCustomer.isActive}
-                  onCheckedChange={(v) =>
-                    setSelectedCustomer({
-                      ...selectedCustomer,
-                      isActive: v,
-                    })
-                  }
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-4">
-                <Button variant="outline" onClick={() => setOpen(false)}>
-                  Cancel
-                </Button>
-                <Button onClick={handleSave} disabled={saving}>
-                  {saving ? "Saving..." : "Save"}
-                </Button>
-              </div>
-
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
     </div>
   );
 }

@@ -1,10 +1,9 @@
-// src/components/dashboard/metric-card.tsx
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
 interface MetricCardProps {
   title: string;
-  value: string | number;
+  value: string;
   description?: string;
   icon: React.ReactNode;
   trend?: {
@@ -22,35 +21,29 @@ export function MetricCard({
 }: MetricCardProps) {
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">
-          {title}
-        </CardTitle>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardTitle className="text-sm font-medium">{title}</CardTitle>
         {icon}
       </CardHeader>
-
       <CardContent>
         <div className="text-2xl font-bold">{value}</div>
-
-        {description || trend ? (
-          <div className="flex items-center space-x-2 mt-1">
+        {(description || trend) && (
+          <div className="flex items-center space-x-2">
             {trend && (
               <span
                 className={cn(
-                  "text-sm font-medium",
-                  trend.isPositive ? "text-green-600" : "text-red-600"
+                  "text-sm",
+                  trend.isPositive ? "text-secondary" : "text-destructive"
                 )}
               >
-                {trend.isPositive ? "+" : "-"}
-                {Math.abs(trend.value)}%
+                {trend.isPositive ? "+" : "-"}{Math.abs(trend.value)}%
               </span>
             )}
-
             {description && (
               <p className="text-sm text-muted-foreground">{description}</p>
             )}
           </div>
-        ) : null}
+        )}
       </CardContent>
     </Card>
   );

@@ -8,77 +8,41 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { useEffect, useState } from "react";
-import { apiFetch } from "@/lib/api";
+import type { AgingBucket } from "@/lib/types";
 
-interface AgingBucket {
-  range: string;
-  amount: number;
-  count: number;
+interface AgingChartProps {
+  data: AgingBucket[];
 }
 
-export function AgingChart() {
-  const [data, setData] = useState<AgingBucket[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  async function loadAging() {
-    setLoading(true);
-
-    try {
-      console.log("🔵 Fetching aging analysis...");
-
-      const res = await apiFetch("/api/v1/dashboard/aging-analysis");
-      const raw = await res.json();
-
-      console.log("🟢 RAW AGING RESPONSE:", JSON.stringify(raw, null, 2));
-
-      // ❗ Backend returned error object (500), not array
-      if (!Array.isArray(raw)) {
-        console.error("❌ Aging API did NOT return an array:", raw);
-        setData([]);      // avoid crash
-        setLoading(false); // 🔥 FIX: stop loading
-        return;
-      }
-
-      // Format valid data
-      const formatted = raw.map((item: any) => ({
-        range: item.range,
-        amount: item.amount,
-        count: item.count,
-      }));
-
-      setData(formatted);
-
-    } catch (err) {
-      console.error("🔴 Aging API failed:", err);
-      setData([]); // keep UI stable
-    }
-
-    setLoading(false); // 🔥 ALWAYS stop loading
-  }
-
-  useEffect(() => {
-    loadAging();
-  }, []);
-
-  if (loading) return <p>Loading aging analysis...</p>;
-
+export function AgingChart({ data }: AgingChartProps) {
   return (
     <Card className="col-span-2">
       <CardHeader>
         <CardTitle>Receivables Aging</CardTitle>
       </CardHeader>
-
       <CardContent>
         <div className="h-[300px]">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={data}>
-              <CartesianGrid strokeDasharray="3 3" />
-
-              <XAxis dataKey="range" />
-              <YAxis />
-              <Tooltip />
-
+              <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+              <XAxis 
+                dataKey="range"
+                axisLine={{ stroke: 'hsl(var(--border))' }}
+                tickLine={{ stroke: 'hsl(var(--border))' }}
+                tick={{ fill: 'hsl(var(--foreground))' }}
+              />
+              <YAxis
+                axisLine={{ stroke: 'hsl(var(--border))' }}
+                tickLine={{ stroke: 'hsl(var(--border))' }}
+                tick={{ fill: 'hsl(var(--foreground))' }}
+              />
+              <Tooltip 
+                contentStyle={{
+                  backgroundColor: 'hsl(var(--background))',
+                  border: '1px solid hsl(var(--border))',
+                  borderRadius: '8px'
+                }}
+              />
               <Bar
                 dataKey="amount"
                 fill="hsl(var(--primary))"
